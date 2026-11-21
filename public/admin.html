@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Results</title><link rel="stylesheet" href="style.css">
+<style>.row{display:flex;align-items:center;gap:.8rem;margin:.5rem 0}.row span.n{flex:0 0 9.5rem}.t{flex:1;height:14px;border-radius:7px;background:rgba(232,207,154,.2)}.t i{display:block;height:100%;border-radius:7px;background:var(--gold)}.row b{width:2.5rem;text-align:right}</style>
+</head><body><main>
+<section class="panel"><h1 style="color:var(--gold)">Results</h1>
+<label for="k">Admin key</label><input id="k" type="password" autocomplete="off">
+<p><button class="go" id="go" type="button" style="margin-top:1rem">Show results</button></p>
+<p class="err" id="err" role="alert"></p><div id="out"></div></section></main>
+<script>
+const $ = (id) => document.getElementById(id);
+async function load() {
+  $('err').textContent = '';
+  const r = await fetch('/api/results', { headers: { 'x-admin-key': $('k').value } }); // key goes in a header
+  const d = await r.json();
+  if (!r.ok) return ($('err').textContent = d.error);
+  const out = $('out'); out.replaceChildren();
+  const top = document.createElement('p'); top.textContent = `${d.voters} people have voted.`; out.append(top);
+  for (const c of d.categories) {
+    const h = document.createElement('h3'); h.textContent = c.name; h.style.cssText = 'margin-top:1.6rem;color:var(--gold)'; out.append(h);
+    const max = Math.max(1, ...c.nominees.map((n) => n.votes));
+    for (const n of c.nominees) {
+      const row = document.createElement('div'); row.className = 'row';
+      row.innerHTML = '<span class="n"></span><div class="t"><i></i></div><b></b>';   // static markup only; text set below
+      row.querySelector('.n').textContent = n.name; row.querySelector('i').style.width = (n.votes / max * 100) + '%';
+      row.querySelector('b').textContent = n.votes; out.append(row);
+    }
+  }
+}
+$('go').addEventListener('click', load);
+</script></body></html>

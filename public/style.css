@@ -1,0 +1,58 @@
+:root{--ink:#1a0305;--velvet:#5e0a10;--red:#7d0f16;--gold:#e8cf9a;--gold-d:#b98d45;--ivory:#f6ead0;--bulb:#fff3d6}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;color:var(--ivory);font:400 1rem/1.6 Lora,Georgia,serif;
+  background:radial-gradient(ellipse at 50% 0%,#8c1118 0,#4a080c 45%,var(--ink) 100%) fixed}
+h1,h2,h3{font-family:"Cormorant Garamond",Georgia,serif;font-weight:700;line-height:1.1;margin:0}
+
+/* Curtains: striped velvet panels covering each half of the screen */
+.curtain{position:fixed;top:0;bottom:0;width:50.5%;z-index:1;transition:transform 1.6s cubic-bezier(.7,0,.2,1);
+  background:repeating-linear-gradient(90deg,#4a080c 0 16px,#7d0f16 16px 34px,#4a080c 34px 50px);
+  box-shadow:inset 0 0 90px rgba(0,0,0,.55)}
+.curtain.left{left:0}.curtain.right{right:0}
+body.open .left{transform:translateX(-101%)}
+body.open .right{transform:translateX(101%)}
+
+main{position:relative;z-index:2;max-width:880px;margin:0 auto;padding:2rem 1.1rem 4rem}
+.panel{background:rgba(20,3,5,.88);border:2px solid var(--gold-d);border-radius:18px;padding:2rem 1.5rem;
+  box-shadow:0 0 0 6px rgba(20,3,5,.6),0 20px 60px rgba(0,0,0,.6)}
+.entry{max-width:460px;margin:8vh auto 0;text-align:center}
+.entry h1{font-size:clamp(2.4rem,9vw,3.4rem);color:var(--gold)}
+.entry p{margin:.8rem 0 1.4rem}
+label{display:block;text-align:left;font-weight:600;margin:1rem 0 .3rem}
+input{width:100%;padding:.8rem 1rem;border-radius:10px;border:2px solid var(--gold-d);background:#0e0203;color:var(--ivory);font:inherit}
+input:focus-visible,button:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+.err{color:#ffb4a8;min-height:1.5em;margin:.8rem 0 0}
+
+button.go,button.ghost{font:600 1rem Lora,serif;border-radius:999px;padding:.8rem 1.6rem;cursor:pointer;border:2px solid var(--gold)}
+button.go{background:var(--gold);color:var(--ink)}
+button.go:disabled{opacity:.5;cursor:wait}
+button.ghost{background:transparent;color:var(--gold)}
+.entry button.go{margin-top:1.4rem;width:100%}
+
+/* Category screen */
+.top{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;margin-bottom:.6rem}
+.bar{height:6px;border-radius:6px;background:rgba(232,207,154,.25);margin-bottom:1.6rem}
+.bar i{display:block;height:100%;border-radius:6px;background:var(--gold);transition:width .4s}
+h2{font-size:clamp(2rem,7vw,3rem);color:var(--gold);text-align:center;margin-bottom:.4rem}
+.hint{text-align:center;margin:0 0 1.6rem;opacity:.85}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1rem}
+@media(min-width:640px){.grid{grid-template-columns:repeat(4,1fr)}.grid.few{grid-template-columns:repeat(2,minmax(0,260px));justify-content:center}}
+.card{background:none;border:0;padding:0;color:inherit;font:inherit;text-align:center;cursor:pointer}
+/* The frame is a row of "marquee bulbs": a repeating radial dot pattern behind the photo */
+.frame{display:block;padding:11px;border-radius:6px;
+  background:radial-gradient(circle,var(--bulb) 38%,#b3252b 42% 62%,transparent 66%) 0 0/15px 15px,var(--gold-d);
+  transition:box-shadow .25s,filter .25s;filter:saturate(.75) brightness(.85)}
+.frame img{display:block;width:100%;aspect-ratio:1;object-fit:cover;border:3px solid var(--ink);background:#000}
+.card .nm{display:block;font:700 1.35rem/1.15 "Cormorant Garamond",serif;margin-top:.6rem}
+.card .tg{display:block;font-size:.85rem;font-style:italic;opacity:.8;margin-top:.15rem}
+.card[aria-pressed=true] .frame{filter:none;box-shadow:0 0 0 3px var(--gold),0 0 34px 8px rgba(255,214,120,.65)}
+.card[aria-pressed=true] .nm::after{content:" ✓"}
+.nav{display:flex;justify-content:space-between;gap:1rem;margin-top:2rem}
+
+/* Review + done */
+.review{list-style:none;padding:0;margin:1.2rem 0}
+.review li{display:flex;justify-content:space-between;gap:1rem;padding:.7rem 0;border-bottom:1px solid rgba(232,207,154,.25)}
+.review b{font-family:"Cormorant Garamond",serif;font-size:1.2rem}
+.done{text-align:center;margin-top:8vh}
+.done h2{font-size:clamp(2.4rem,9vw,3.6rem)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
