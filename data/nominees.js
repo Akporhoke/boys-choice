@@ -26,6 +26,9 @@ const categories = [
   { id: 'financial', name: 'Financially Challenged', nominees: [
     n('evanss', 'Evanss', 'Monkey dey work, monkey still poor'), n('otems', 'Otems', 'Headboy wey nor get money'),
     n('emmy', 'Emmy', 'Emma No Well'), n('hottest', 'Hottest', 'Opay') ] },
+  { id: 'sticker', name: 'Sticker of the Year', nominees: [
+    n('sticker1', 'Sticker 1', ''), n('sticker2', 'Sticker 2', ''), n('sticker3', 'Sticker 3', ''),
+    n('sticker4', 'Sticker 4', ''), n('sticker5', 'Sticker 5', '') ] },
 ];
 // Hide categories that have no nominees yet so voters never see an empty screen
 module.exports = { categories: categories.filter((c) => c.nominees.length) };
