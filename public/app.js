@@ -84,9 +84,18 @@ function review() {
       h('button', { class: 'ghost', type: 'button', onclick: () => { state.i = state.cats.length - 1; category(); } }, 'Back'), send)));
 }
 
-function done(msg) {
+async function done(msg) {
   document.body.classList.add('open');
-  show(h('section', { class: 'done' }, h('h2', {}, 'Thank you'), h('p', {}, msg)));
+  const wrap = h('section', { class: 'done' }, h('h2', {}, 'Thank you'), h('p', {}, msg));
+  show(wrap);
+  try {                                               // then load the clips; if none exist, show nothing extra
+    const list = await api('/api/moments');
+    if (!list.length) return;
+    wrap.append(h('h2', { class: 'mh' }, 'Funny 2026 moments'),
+      h('div', { class: 'moments' }, list.map((m) => h('figure', { class: 'moment' },
+        h('span', { class: 'frame' }, h('video', { src: m.src, controls: '', playsinline: '', preload: 'metadata' })),
+        h('figcaption', {}, m.title)))));
+  } catch { /* clips are a bonus: ignore errors */ }
 }
 
 start().catch((e) => show(h('p', { class: 'err' }, e.message)));

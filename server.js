@@ -69,6 +69,17 @@ app.post('/api/vote', limit, (req, res) => {
   res.json({ ok: true });
 });
 
+// Funny moments: every .mp4/.webm in public/videos is listed automatically, no code edits needed.
+// Title = file name without extension, leading order numbers, and dashes/underscores.
+app.get('/api/moments', (req, res) => {
+  let files = [];
+  try { files = fs.readdirSync(path.join(__dirname, 'public', 'videos')).filter((f) => /\.(mp4|webm)$/i.test(f)).sort(); } catch {}
+  res.json(files.map((f) => ({
+    src: '/videos/' + encodeURIComponent(f),
+    title: f.replace(/\.[^.]+$/, '').replace(/^\d+[-_. ]*/, '').replace(/[-_]+/g, ' ').trim() || 'Moment',
+  })));
+});
+
 // Has this device already voted? (The server is the source of truth, so admin resets work.)
 app.get('/api/status', (req, res) => res.json({ voted: load().some((v) => v.token === req.query.token) }));
 
