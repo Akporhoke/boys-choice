@@ -75,10 +75,12 @@ app.post('/api/vote', limit, (req, res) => {
 // Funny moments: every .mp4/.webm in public/videos is listed automatically, no code edits needed.
 // Title = file name without extension, leading order numbers, and dashes/underscores.
 app.get('/api/moments', (req, res) => {
-  let files = [];
-  try { files = fs.readdirSync(path.join(__dirname, 'public', 'videos')).filter((f) => /\.(mp4|webm)$/i.test(f)).sort(); } catch {}
+  let files = [], all = [];
+  try { all = fs.readdirSync(path.join(__dirname, 'public', 'videos')); files = all.filter((f) => /\.(mp4|webm)$/i.test(f)).sort(); } catch {}
   res.json(files.map((f) => ({
     src: '/videos/' + encodeURIComponent(f),
+    // A picture with the same name (01-clip.jpg next to 01-clip.mp4) is shown before play, so the box is never black
+    poster: all.includes(f.replace(/\.[^.]+$/, '.jpg')) ? '/videos/' + encodeURIComponent(f.replace(/\.[^.]+$/, '.jpg')) : '',
     title: f.replace(/\.[^.]+$/, '').replace(/^\d+[-_. ]*/, '').replace(/[-_]+/g, ' ').trim() || 'Moment',
   })));
 });

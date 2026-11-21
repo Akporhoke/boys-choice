@@ -103,7 +103,7 @@ async function done(msg) {
     open.addEventListener('click', () => {
       open.replaceWith(h('div', {}, h('h2', { class: 'mh' }, 'Funny 2026 moments'),
         h('div', { class: 'moments' }, list.map((m) => h('figure', { class: 'moment' },
-          h('span', { class: 'frame' }, h('video', { src: m.src, controls: '', playsinline: '', preload: 'none' })),
+          h('span', { class: 'frame' }, h('video', { src: m.src, poster: m.poster, controls: '', playsinline: '', preload: 'none' })),
           h('figcaption', {}, m.title))))));
     });
     wrap.append(open);
