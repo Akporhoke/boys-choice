@@ -102,9 +102,17 @@ async function done(msg) {
     const open = h('button', { class: 'go', type: 'button', style: 'margin-top:2.5rem' }, `Watch funny 2026 moments (${list.length})`);
     open.addEventListener('click', () => {
       open.replaceWith(h('div', {}, h('h2', { class: 'mh' }, 'Funny 2026 moments'),
-        h('div', { class: 'moments' }, list.map((m) => h('figure', { class: 'moment' },
-          h('span', { class: 'frame' }, h('video', { src: m.src, poster: m.poster, controls: '', playsinline: '', preload: 'none' })),
-          h('figcaption', {}, m.title))))));
+        h('div', { class: 'moments' }, list.map((m) => {
+          if (m.type === 'video') {                   // clips: nothing downloads until the voter presses play
+            return h('figure', { class: 'moment vid' },
+              h('span', { class: 'frame' }, h('video', { src: m.src, poster: m.poster, controls: '', playsinline: '', preload: 'none' })),
+              m.title ? h('figcaption', {}, m.title) : '');
+          }
+          const img = h('img', { src: m.src, alt: m.title || 'Funny moment', loading: 'lazy' });   // lazy: loads only as you scroll
+          const fig = h('figure', { class: 'moment' }, h('span', { class: 'frame' }, img), m.title ? h('figcaption', {}, m.title) : '');
+          fig.addEventListener('click', () => fig.classList.toggle('big'));                         // tap a photo to enlarge it
+          return fig;
+        }))));
     });
     wrap.append(open);
   } catch { /* clips are a bonus: ignore errors */ }

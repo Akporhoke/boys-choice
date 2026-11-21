@@ -72,17 +72,25 @@ app.post('/api/vote', limit, (req, res) => {
   res.json({ ok: true });
 });
 
-// Funny moments: every .mp4/.webm in public/videos is listed automatically, no code edits needed.
-// Title = file name without extension, leading order numbers, and dashes/underscores.
+// Funny moments: every photo and clip in public/videos is listed automatically, no code edits needed.
+// A file named with just a number (07.jpg) shows no caption. A name like 07-fejiro-sleeping.jpg shows "fejiro sleeping".
+// A picture with the same name as a video (20.jpg next to 20.mp4) is that video's preview, not a separate photo.
 app.get('/api/moments', (req, res) => {
-  let files = [], all = [];
-  try { all = fs.readdirSync(path.join(__dirname, 'public', 'videos')); files = all.filter((f) => /\.(mp4|webm)$/i.test(f)).sort(); } catch {}
-  res.json(files.map((f) => ({
-    src: '/videos/' + encodeURIComponent(f),
-    // A picture with the same name (01-clip.jpg next to 01-clip.mp4) is shown before play, so the box is never black
-    poster: all.includes(f.replace(/\.[^.]+$/, '.jpg')) ? '/videos/' + encodeURIComponent(f.replace(/\.[^.]+$/, '.jpg')) : '',
-    title: f.replace(/\.[^.]+$/, '').replace(/^\d+[-_. ]*/, '').replace(/[-_]+/g, ' ').trim() || 'Moment',
-  })));
+  let all = [];
+  try { all = fs.readdirSync(path.join(__dirname, 'public', 'videos')); } catch {}
+  const base = (f) => f.replace(/\.[^.]+$/, '');
+  const isVid = (f) => /\.(mp4|webm)$/i.test(f), isImg = (f) => /\.(jpe?g|png|webp)$/i.test(f);
+  const vids = new Set(all.filter(isVid).map(base));
+  const url = (f) => '/videos/' + encodeURIComponent(f);
+  res.json(all
+    .filter((f) => isVid(f) || (isImg(f) && !vids.has(base(f))))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    .map((f) => ({
+      type: isVid(f) ? 'video' : 'image',
+      src: url(f),
+      poster: isVid(f) && all.includes(base(f) + '.jpg') ? url(base(f) + '.jpg') : '',
+      title: base(f).replace(/^\d+[-_. ]*/, '').replace(/[-_]+/g, ' ').trim(),   // empty when the name is only a number
+    })));
 });
 
 // Has this device already voted? (The server is the source of truth, so admin resets work.)

@@ -55,11 +55,13 @@ h2{font-size:clamp(2rem,7vw,3rem);color:var(--gold);text-align:center;margin-bot
 .review b{font-family:"Cormorant Garamond",serif;font-size:1.2rem}
 .done{text-align:center;margin-top:8vh}
 .done h2{font-size:clamp(2.4rem,9vw,3.6rem)}
-/* Funny moments: videos sit in the same bulb frame, at full brightness */
+/* Funny moments: a two-column gallery. Clips and enlarged photos take the full width. */
 .mh{margin:3.5rem 0 1.4rem;font-size:clamp(1.8rem,6vw,2.6rem)}
-.moments{display:grid;gap:1.6rem;max-width:520px;margin:0 auto}
-@media(min-width:900px){.moments{grid-template-columns:1fr 1fr;max-width:none}}
-.moment{margin:0}.moment .frame{filter:none}
+.moments{display:grid;grid-template-columns:1fr 1fr;gap:1rem;max-width:760px;margin:0 auto}
+.moment{margin:0;cursor:zoom-in}.moment .frame{filter:none;padding:7px;background-size:10px 10px}
+.moment img{display:block;width:100%;aspect-ratio:3/4;object-fit:cover;border:2px solid var(--ink);background:#000}
+.moment.big,.moment.vid{grid-column:1/-1;max-width:460px;justify-self:center;width:100%;cursor:default}
+.moment.big{cursor:zoom-out}.moment.big img{aspect-ratio:auto}.moment.vid .frame{padding:11px;background-size:15px 15px}
 .frame video{display:block;width:100%;max-height:70vh;object-fit:contain;border:3px solid var(--ink);background:#000}
-.moment figcaption{font:700 1.3rem "Cormorant Garamond",serif;margin-top:.6rem}
+.moment figcaption{font:700 1.2rem "Cormorant Garamond",serif;margin-top:.5rem}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
