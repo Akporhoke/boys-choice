@@ -41,13 +41,22 @@ async function start() {
     err, btn));
 }
 
+// A nominee's picture. Video stickers play silently on a loop; everything else is a normal photo.
+function media(n) {
+  if (!n.video) return h('img', { src: n.photo, alt: n.name });
+  const v = h('video', { src: n.video, poster: n.photo, loop: '', playsinline: '', 'aria-label': n.name });
+  v.muted = true; v.autoplay = true;                   // browsers only autoplay when muted
+  v.play().catch(() => {});                            // if autoplay is blocked, the still picture shows instead
+  return v;
+}
+
 function category() {
   const c = state.cats[state.i], last = state.i === state.cats.length - 1;
   const next = state.cats[state.i + 1];
   if (next) next.nominees.forEach((n) => { new Image().src = n.photo; });
   const cards = c.nominees.map((n) => {
     const card = h('button', { class: 'card', type: 'button', 'aria-pressed': state.picks[c.id] === n.id },
-      h('span', { class: 'frame' }, h('img', { src: n.photo, alt: n.name })),
+      h('span', { class: 'frame' }, media(n)),
       h('span', { class: 'nm' }, n.name), h('span', { class: 'tg' }, n.tag));
     card.addEventListener('click', () => {
       const picking = state.picks[c.id] !== n.id;       // tap the same nominee again to un-pick

@@ -49,6 +49,8 @@ h2{font-size:clamp(2rem,7vw,3rem);color:var(--gold);text-align:center;margin-bot
 .card[aria-pressed=true] .nm::after{content:" ✓"}
 .nav{display:flex;justify-content:space-between;gap:1rem;margin-top:2rem}
 
+.card .frame video{display:block;width:100%;aspect-ratio:1;object-fit:cover;max-height:none;border:3px solid var(--ink);background:#000}
+
 /* Review + done */
 .review{list-style:none;padding:0;margin:1.2rem 0}
 .review li{display:flex;justify-content:space-between;gap:1rem;padding:.7rem 0;border-bottom:1px solid rgba(232,207,154,.25)}
