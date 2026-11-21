@@ -18,7 +18,18 @@ const api = (url, body) => fetch(url, body ? { method: 'POST', headers: { 'Conte
 
 // One random token per browser: lets the server block a second ballot from the same device.
 const token = localStorage.getItem('bc_token') || (() => { const t = crypto.randomUUID(); localStorage.setItem('bc_token', t); return t; })();
-const state = { name: '', code: '', cats: [], i: 0, picks: {} };
+const state = { name: '', code: '', cats: [], i: 0, picks: {}, opens: 0 };   // opens = opening time in ms, or 0 when voting is already open
+
+// NEW: "not open yet" helpers. locked() is true until the opening time. The server enforces this too; this only drives the screens.
+const locked = () => state.opens && Date.now() < state.opens;
+const fmtWhen = (ms) => new Date(ms).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });   // shown in the voter's own time
+// A small message at the bottom of the screen that hides itself (textContent only).
+let toastEl, toastTimer;
+function toast(msg) {
+  if (!toastEl) { toastEl = h('div', { class: 'toast', role: 'status', 'aria-live': 'polite', hidden: '' }); document.body.append(toastEl); }
+  toastEl.textContent = msg; toastEl.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { toastEl.hidden = true; }, 3500);
+}
 const show = (...nodes) => { main.replaceChildren(...nodes); window.scrollTo(0, 0); };
 
 // Live countdown to the ceremony. It stops by itself when the screen changes.
@@ -38,6 +49,7 @@ function countdown() {
 async function start() {
   const ballot = await api('/api/ballot');
   state.cats = ballot.categories;
+  state.opens = ballot.voting === 'soon' ? Date.parse(ballot.opensAt) : 0;   // NEW: 0 means voting is already open
   if ((await api('/api/status?token=' + token)).voted) return done('You have already voted on this device.');
   // NEW: if the admin closed voting, new voters see this instead of the entry screen (people who already voted still get their thank-you screen above)
   if (ballot.closed) return show(h('section', { class: 'panel entry' }, h('h1', {}, 'Voting is closed'), h('p', {}, 'Results open at the ceremony on November 30.')));
@@ -61,6 +73,7 @@ async function start() {
     countdown(),
     h('p', { class: 'voters' }, ballot.voters ? `${ballot.voters} ${ballot.voters === 1 ? 'boy has' : 'boys have'} voted so far.` : 'Be the first to vote.'),
     h('p', {}, 'Pick one nominee in each category. You can vote once.'),
+    state.opens ? h('p', { class: 'soonline' }, `Voting opens ${fmtWhen(state.opens)}. You can look around until then.`) : '',   // NEW
     h('label', { for: 'name' }, 'Your name'), name,
     ballot.needsCode ? [h('label', { for: 'code' }, 'Access code from the group'), code] : '',
     err, btn));
@@ -124,6 +137,7 @@ document.addEventListener('keydown', (e) => {
 
 function category() {
   const c = state.cats[state.i], last = state.i === state.cats.length - 1;
+  const look = !!locked();                              // NEW: true = voting has not opened yet, so this screen is look-only
   const next = state.cats[state.i + 1];
   if (next) next.nominees.forEach((n) => { new Image().src = n.photo; });
   const cards = c.nominees.map((n) => {
@@ -131,6 +145,7 @@ function category() {
       h('span', { class: 'frame' }, media(n)),
       h('span', { class: 'nm' }, n.name), h('span', { class: 'tg' }, n.tag));
     card.addEventListener('click', () => {
+      if (locked()) return toast(`Voting opens ${fmtWhen(state.opens)}. You cannot pick yet.`);   // NEW: before opening, a tap picks nothing and moves nothing
       const picking = state.picks[c.id] !== n.id;       // tap the same nominee again to un-pick
       state.picks[c.id] = picking ? n.id : undefined;
       if (picking) tick();                              // NEW: tiny sound + vibration on a pick (not on un-pick)
@@ -173,12 +188,14 @@ function category() {
     h('div', { class: 'bar' }, h('i', { style: `width:${((state.i + 1) / state.cats.length) * 100}%` })),
     infoPanel,                                          // NEW step 5: the panel (hidden until "i" is tapped)
     h('h2', {}, c.name),
-    h('p', { class: 'hint' }, 'Tap a nominee and it moves on by itself. Use Skip to leave one blank.'),
+    h('p', { class: 'hint' }, look ? `Voting opens ${fmtWhen(state.opens)}. You can look around, but tapping a nominee will not pick yet.`
+      : 'Tap a nominee and it moves on by itself. Use Skip to leave one blank.'),
     h('div', { class: 'grid' + (c.nominees.length < 4 ? ' few' : '') }, cards),
     h('div', { class: 'nav' },
       h('button', { class: 'ghost', type: 'button', onclick: () => { state.i ? (state.i--, category()) : null; } }, 'Back'),
-      h('button', { class: 'go', type: 'button', onclick: () => { last ? review() : (state.i++, category()); } },
-        last ? 'Review my picks' : (state.picks[c.id] ? 'Next category' : 'Skip this one')))));
+      // NEW: while look-only, the button just browses (the last category loops back to the first); it never opens the review/submit screen
+      h('button', { class: 'go', type: 'button', onclick: () => { look ? (last ? (state.i = 0, category()) : (state.i++, category())) : last ? review() : (state.i++, category()); } },
+        look ? (last ? 'Back to the first one' : 'Next category') : last ? 'Review my picks' : (state.picks[c.id] ? 'Next category' : 'Skip this one')))));
 }
 
 function review() {
@@ -209,9 +226,12 @@ async function done(msg) {
   const ballotBtn = h('button', { class: 'ghost', type: 'button' }, 'View my ballot');
   const momentsBtn = h('button', { class: 'go', type: 'button', hidden: '' }, 'Relive the memories of 2026');   // shown once we know clips exist
   const wrap = h('section', { class: 'done' }, h('h2', {}, 'Thank you'), h('p', {}, msg),
-    h('p', { class: 'quip' }, QUIPS[Math.floor(Math.random() * QUIPS.length)]), count, cardBox,
-    makeRater('process', 'How was the nomination and voting process?'),   // from rate.js
-    h('div', { class: 'btnrow' }, ballotBtn, momentsBtn), ballotBox, momentsBox);
+    h('p', { class: 'quip' }, QUIPS[Math.floor(Math.random() * QUIPS.length)]), count,
+    // CHANGED: the buttons now come right after the voter count, so "Relive the memories" is seen without scrolling.
+    // The two boxes stay directly under the buttons, so the ballot or the gallery opens right where the voter tapped.
+    h('div', { class: 'btnrow' }, momentsBtn, ballotBtn), ballotBox, momentsBox,
+    cardBox,                                                              // share card
+    makeRater('process', 'How was the nomination and voting process?'));   // feedback (from rate.js), now at the bottom
   show(wrap);
 
   // NEW: screenshot-friendly "I voted" card. It shows only HOW MANY categories were voted in, never who, so the ballot stays secret.

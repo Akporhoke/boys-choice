@@ -79,6 +79,12 @@ h2{font-size:clamp(2rem,7vw,3rem);color:var(--gold);text-align:center;margin-bot
 .review b{font-family:"Cormorant Garamond",serif;font-size:1.2rem}
 .done{text-align:center;margin-top:8vh}
 .done h2{font-size:clamp(2.4rem,9vw,3.6rem)}
+/* NEW: message shown when someone taps a nominee before voting opens, and the "Voting opens ..." line on the entry screen */
+.toast{position:fixed;left:50%;bottom:calc(1.2rem + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:60;
+  width:max-content;max-width:min(92vw,420px);padding:.8rem 1.2rem;border-radius:14px;border:2px solid var(--gold);
+  background:rgba(20,3,5,.96);color:var(--ivory);text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+.toast[hidden]{display:none}
+.soonline{color:var(--gold);font-style:italic}
 /* NEW: the "I voted" share card on the thank-you screen (made to look good in a screenshot) */
 .votecard{max-width:340px;margin:1.6rem auto .6rem;padding:1.4rem 1.2rem;border-radius:16px;border:2px solid var(--gold);
   background:radial-gradient(ellipse at 50% 0%,#8c1118 0,#4a080c 60%,var(--ink) 100%);

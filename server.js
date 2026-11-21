@@ -29,7 +29,14 @@ const SET = path.join(__dirname, 'data', 'settings.json');
 const readSettings = () => { try { return JSON.parse(fs.readFileSync(SET, 'utf8')); } catch { return {}; } };
 const saveSettings = (patch) => fs.writeFileSync(SET, JSON.stringify({ ...readSettings(), ...patch }));
 const revealed = () => !!readSettings().revealed;       // public results page open?
-const votingClosed = () => !!readSettings().closed;     // NEW: is voting closed?
+// NEW: voting has three states. 'closed' (admin pressed Close), 'soon' (an opening date is set and has not arrived yet), 'open'.
+// With no opening date saved, voting is open, so existing setups keep working.
+const votingState = () => {
+  const s = readSettings();
+  if (s.closed) return 'closed';
+  if (s.opensAt && Date.now() < Date.parse(s.opensAt)) return 'soon';
+  return 'open';
+};
 
 const adminOk = (req) => {
   const a = Buffer.from(req.get('x-admin-key') || ''), b = Buffer.from(ADMIN_KEY);
@@ -47,22 +54,28 @@ const limit = (req, res, next) => {
 };
 
 // Frontend asks: what are the categories, is a code required, and (NEW) is voting closed?
-app.get('/api/ballot', (req, res) => res.json({ needsCode: !!VOTE_CODE, closed: votingClosed(), categories, voters: load().length }));
+// CHANGED: also sends `voting` ('open' | 'soon' | 'closed') and `opensAt` so the page can show "Voting opens ..." before the date.
+app.get('/api/ballot', (req, res) => res.json({
+  needsCode: !!VOTE_CODE, closed: votingState() === 'closed', voting: votingState(), opensAt: readSettings().opensAt || '',
+  categories, voters: load().length }));
 
 // Public voter counter: just a number, no names.
 app.get('/api/count', (req, res) => res.json({ voters: load().length }));
 
 // Checks the code before the voter starts, so a wrong code is caught early.
 app.post('/api/enter', limit, (req, res) => {
-  if (votingClosed()) return res.status(403).json({ error: 'Voting is closed.' });   // NEW
+  if (votingState() === 'closed') return res.status(403).json({ error: 'Voting is closed.' });   // NEW (before the opening date people may still enter and look around)
   if (!codeOk(req.body.code)) return res.status(403).json({ error: 'That access code is wrong.' });
   res.json({ ok: true });
 });
 
 // Submit one ballot. picks = { categoryId: nomineeId }, skipped categories are simply missing.
 app.post('/api/vote', limit, (req, res) => {
-  // NEW: the real lock. Even someone who was mid-ballot when the admin closed voting is turned away here.
-  if (votingClosed()) return res.status(403).json({ error: 'Voting is closed.' });
+  // NEW: the real lock. Even someone mid-ballot when the admin closed voting is turned away here,
+  // and nobody can vote before the opening date, whatever the browser says.
+  const vs = votingState();
+  if (vs === 'closed') return res.status(403).json({ error: 'Voting is closed.' });
+  if (vs === 'soon') return res.status(403).json({ error: 'Voting has not opened yet.' });
   const { name, code, token, picks } = req.body || {};
   if (!codeOk(code)) return res.status(403).json({ error: 'That access code is wrong.' });
   const who = norm(name);
@@ -130,7 +143,8 @@ app.get('/api/results', limit, (req, res) => {
   if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
   const votes = load();
   res.json({
-    voters: votes.length, revealed: revealed(), closed: votingClosed(),   // CHANGED: also tells the admin page if voting is closed
+    voters: votes.length, revealed: revealed(), closed: votingState() === 'closed',   // CHANGED: also tells the admin page if voting is closed
+    voting: votingState(), opensAt: readSettings().opensAt || '',                     // NEW: current state and the saved opening date
     people: votes.map((v) => ({ key: v.name, name: v.display || v.name, at: v.at })),
     categories: tally(votes),
   });
@@ -153,6 +167,15 @@ app.post('/api/admin/reveal', limit, (req, res) => {
 app.post('/api/admin/close', limit, (req, res) => {
   if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
   saveSettings({ closed: !!(req.body && req.body.closed) });
+  res.json({ ok: true });
+});
+
+// NEW: admin sets the date voting opens (an ISO date string), or sends '' to clear it = "open voting now".
+app.post('/api/admin/opens', limit, (req, res) => {
+  if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
+  const v = req.body && req.body.opensAt;
+  if (v && Number.isNaN(Date.parse(v))) return res.status(400).json({ error: 'That date is not valid.' });
+  saveSettings({ opensAt: v ? new Date(v).toISOString() : '' });
   res.json({ ok: true });
 });
 

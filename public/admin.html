@@ -35,6 +35,27 @@ async function load() {
     };
     out.append(state, cl);
 
+    // NEW: "Voting opens" date. Before this date voters can look around the ballot, but tapping a nominee only shows "Voting opens ...".
+    // The date is picked in YOUR local time and saved as an exact moment; each voter sees it in their own time.
+    const fmt = (iso) => new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+    const opensH = el('h3', 'Voting opens');
+    const opensP = el('p', d.opensAt
+      ? (d.voting === 'soon' ? `Voting opens on ${fmt(d.opensAt)}. Until then voters can look around but not vote.` : `Voting opened on ${fmt(d.opensAt)}.`)
+      : 'No opening date set: voting is open now.');
+    const opensIn = el('input'); opensIn.type = 'datetime-local'; opensIn.setAttribute('aria-label', 'Voting opens at'); opensIn.style.colorScheme = 'dark';
+    if (d.opensAt) { const t = new Date(d.opensAt); opensIn.value = new Date(t - t.getTimezoneOffset() * 60000).toISOString().slice(0, 16); }   // show it in local time
+    const saveOpens = el('button', 'Save opening date', 'go'); saveOpens.style.marginTop = '.8rem';
+    saveOpens.onclick = async () => {
+      if (!opensIn.value) { $('err').textContent = 'Pick a date and time first.'; return; }
+      try { await call('/api/admin/opens', { opensAt: new Date(opensIn.value).toISOString() }); load(); } catch (e) { $('err').textContent = e.message; }
+    };
+    out.append(opensH, opensP, opensIn, saveOpens);
+    if (d.voting === 'soon') {                                    // "Open voting now" only makes sense while it is still waiting
+      const openNow = el('button', 'Open voting now', 'ghost'); openNow.style.cssText = 'margin:.8rem 0 0 .6rem';
+      openNow.onclick = async () => { try { await call('/api/admin/opens', { opensAt: '' }); load(); } catch (e) { $('err').textContent = e.message; } };
+      out.append(openNow);
+    }
+
     // Reveal switch for the public results page (/results.html)
     const rv = el('button', d.revealed ? 'Hide results from everyone' : 'Show results to everyone', d.revealed ? 'ghost' : 'go');
     rv.onclick = async () => { try { await call('/api/admin/reveal', { revealed: !d.revealed }); load(); } catch (e) { $('err').textContent = e.message; } };
