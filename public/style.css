@@ -41,6 +41,18 @@ textarea{width:100%;margin:.8rem 0 0;padding:.8rem 1rem;border-radius:10px;borde
 
 /* Category screen */
 .top{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;margin-bottom:.6rem}
+/* NEW: "Category X of Y" and the info button, grouped so the voter's name stays on the right */
+.top-l{display:flex;align-items:center;gap:.6rem;min-width:0}
+/* NEW: round "i" button. 2.75rem = 44px, above the 40px tap minimum. Gold outline on velvet, like the .ghost buttons. */
+.info-btn{flex:0 0 auto;width:2.75rem;height:2.75rem;padding:0;border-radius:50%;border:2px solid var(--gold);
+  background:transparent;color:var(--gold);font:italic 700 1.5rem/1 "Cormorant Garamond",Georgia,serif;cursor:pointer}
+.info-btn[aria-expanded=true]{background:var(--gold);color:var(--ink)}   /* filled gold while the panel is open */
+.info-btn:focus-visible{outline:3px solid var(--gold);outline-offset:3px}  /* visible keyboard focus */
+/* NEW: the description panel, styled like .panel but smaller */
+.info{background:rgba(20,3,5,.88);border:2px solid var(--gold-d);border-radius:14px;padding:1rem 1.2rem;margin:0 0 1.4rem;text-align:center}
+.info[hidden]{display:none}   /* needed because .info sets its own display rules */
+.info p{margin:0 0 .8rem}
+.info-close{min-height:2.5rem;padding:.4rem 1.4rem}   /* at least 40px tall */
 .bar{height:6px;border-radius:6px;background:rgba(232,207,154,.25);margin-bottom:1.6rem}
 .bar i{display:block;height:100%;border-radius:6px;background:var(--gold);transition:width .4s}
 h2{font-size:clamp(2rem,7vw,3rem);color:var(--gold);text-align:center;margin-bottom:.4rem}

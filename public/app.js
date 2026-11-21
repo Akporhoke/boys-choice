@@ -73,6 +73,16 @@ function media(n) {
   return v;
 }
 
+// ---- NEW: info button support ----
+// Only one category screen exists at a time, so one shared record is enough: { btn, panel, set }.
+// category() fills it in on every draw; it is null when the category has no `info` text.
+let info = null;
+// Escape closes the panel and puts focus back on the "i" button.
+// This listener is added ONCE here (not inside category()), so redraws never stack up listeners.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && info && info.btn.isConnected && !info.panel.hidden) info.set(false, true);
+});
+
 function category() {
   const c = state.cats[state.i], last = state.i === state.cats.length - 1;
   const next = state.cats[state.i + 1];
@@ -92,9 +102,36 @@ function category() {
     });
     return card;
   });
+
+  // NEW step 1: build the info button and its panel (only if this category has an `info` text).
+  // Every draw of category() builds a fresh panel that starts hidden, so moving to another category closes it.
+  let infoBtn = '', infoPanel = '';
+  info = null;
+  if (c.info) {
+    const closeBtn = h('button', { class: 'ghost info-close', type: 'button' }, 'Close');
+    // h() puts the text in as a text node, so the description can never inject HTML.
+    infoPanel = h('div', { class: 'info', id: 'info-panel', role: 'region', 'aria-label': `About ${c.name}`, hidden: '' },
+      h('p', {}, c.info), closeBtn);
+    // A real <button> with the required label, and aria-expanded that always matches the panel state.
+    infoBtn = h('button', { class: 'info-btn', type: 'button', 'aria-label': 'About this award', 'aria-expanded': 'false', 'aria-controls': 'info-panel' }, 'i');
+    // NEW step 2: one function opens or closes the panel and keeps aria-expanded in sync.
+    // refocus = true sends keyboard focus back to the "i" button (used by Close and Escape).
+    const set = (open, refocus) => {
+      infoPanel.hidden = !open;
+      infoBtn.setAttribute('aria-expanded', String(open));
+      if (refocus) infoBtn.focus();
+    };
+    // NEW step 3: tapping "i" only toggles the panel. It is not inside a nominee card and never touches state.picks or state.i.
+    infoBtn.addEventListener('click', () => set(infoPanel.hidden));
+    closeBtn.addEventListener('click', () => set(false, true));
+    info = { btn: infoBtn, panel: infoPanel, set };
+  }
+
   show(h('section', {},
-    h('div', { class: 'top' }, h('span', {}, `Category ${state.i + 1} of ${state.cats.length}`), h('span', {}, state.name)),
+    // NEW step 4: the "i" button sits next to "Category X of Y" (grouped in .top-l so the name stays on the right).
+    h('div', { class: 'top' }, h('div', { class: 'top-l' }, h('span', {}, `Category ${state.i + 1} of ${state.cats.length}`), infoBtn), h('span', {}, state.name)),
     h('div', { class: 'bar' }, h('i', { style: `width:${((state.i + 1) / state.cats.length) * 100}%` })),
+    infoPanel,                                          // NEW step 5: the panel (hidden until "i" is tapped)
     h('h2', {}, c.name),
     h('p', { class: 'hint' }, 'Tap a nominee and it moves on by itself. Use Skip to leave one blank.'),
     h('div', { class: 'grid' + (c.nominees.length < 4 ? ' few' : '') }, cards),
