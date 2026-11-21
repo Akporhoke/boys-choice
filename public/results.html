@@ -14,6 +14,7 @@
 <body>
 <div class="curtain left" aria-hidden="true"></div><div class="curtain right" aria-hidden="true"></div>
 <main id="main"></main>
+<script src="rate.js"></script>
 <script>
 const main = document.getElementById('main');
 const el = (tag, text, cls) => { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; };
@@ -31,16 +32,68 @@ async function check() {
   render(d); document.body.classList.add('reveal', 'open');   // curtains part in front of the winners page
 }
 
+// ---- Drumroll: built from noise bursts in the browser, so no sound file is needed ----
+let sound = true, ac;
+const audio = () => { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); return ac; };
+function hit(t0, dur, vol, freq) {                        // one burst of filtered noise = one drum hit
+  const c = audio(), buf = c.createBuffer(1, Math.ceil(c.sampleRate * dur), c.sampleRate), data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  const src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+  src.buffer = buf; f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = 0.7;
+  g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  src.connect(f); f.connect(g); g.connect(c.destination); src.start(t0);
+}
+function drumroll(sec) {                                  // hits get faster and louder, then a cymbal crash
+  if (!sound) return;
+  try {
+    const t = audio().currentTime; let x = 0, gap = 0.11;
+    while (x < sec) { hit(t + x, 0.09, 0.25 + 0.35 * (x / sec), 1800); x += gap; gap = Math.max(0.035, gap * 0.955); }
+    hit(t + sec, 1.3, 0.6, 5000);
+  } catch {}
+}
+
+// ---- Confetti on a canvas that removes itself ----
+function confetti() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cv = document.createElement('canvas');
+  cv.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:50';
+  document.body.append(cv);
+  const W = (cv.width = innerWidth), H = (cv.height = innerHeight), g = cv.getContext('2d');
+  const cols = ['#e8cf9a', '#b3252b', '#f6ead0', '#ffd36e'];
+  const bits = Array.from({ length: 160 }, () => ({ x: W / 2 + (Math.random() - .5) * W * .3, y: H * .55,
+    vx: (Math.random() - .5) * 14, vy: -Math.random() * 16 - 6, s: 5 + Math.random() * 6, r: Math.random() * 6,
+    vr: (Math.random() - .5) * .4, c: cols[Math.random() * 4 | 0] }));
+  let frame = 0;
+  (function step() {
+    g.clearRect(0, 0, W, H);
+    for (const p of bits) {
+      p.vy += .35; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+      g.save(); g.translate(p.x, p.y); g.rotate(p.r); g.fillStyle = p.c; g.fillRect(-p.s / 2, -p.s / 3, p.s, p.s * .6); g.restore();
+    }
+    if (++frame < 200) requestAnimationFrame(step); else cv.remove();
+  })();
+}
+
+// One drumroll at a time, then reveal + confetti
+let busy = false;
+function celebrate(show) {
+  if (busy) return; busy = true;
+  const secs = 2.4; drumroll(secs);
+  setTimeout(() => { show(); confetti(); busy = false; }, secs * 1000);
+}
+
 function render(d) {
-  const all = el('button', 'Reveal all winners', 'go'); const buttons = [];
-  const box = el('div', undefined, 'top'); box.style.justifyContent = 'center'; box.append(all);
+  const all = el('button', 'Reveal all winners', 'go'), snd = el('button', 'Sound: on', 'ghost'), opens = [];
+  snd.onclick = () => { sound = !sound; snd.textContent = 'Sound: ' + (sound ? 'on' : 'off'); };
+  const box = el('div', undefined, 'top'); box.style.cssText = 'justify-content:center;gap:1rem;flex-wrap:wrap'; box.append(all, snd);
   const list = el('div');
   for (const c of d.categories) {
     const top = c.nominees[0] ? c.nominees[0].votes : 0;
     const winners = top > 0 ? c.nominees.filter((n) => n.votes === top) : [];   // ties show every winner
     const sec = el('section', undefined, 'rc'); const body = el('div'); body.hidden = true;
-    const btn = el('button', `Reveal: ${c.name}`, 'go'); buttons.push(btn);
-    btn.onclick = () => { body.hidden = false; btn.hidden = true; };
+    const btn = el('button', `Reveal: ${c.name}`, 'go');
+    const open = () => { body.hidden = false; btn.hidden = true; }; opens.push(open);
+    btn.onclick = () => { btn.textContent = 'Drumroll...'; celebrate(open); };
     body.append(el('h2', c.name));
     if (!winners.length) body.append(el('p', 'No votes in this category.'));
     else {
@@ -60,8 +113,8 @@ function render(d) {
     }
     sec.append(btn, body); list.append(sec);
   }
-  all.onclick = () => buttons.forEach((b) => b.click());
-  const wrap = el('section'); wrap.append(el('h2', 'And the winners are'), box, list);
+  all.onclick = () => { all.textContent = 'Drumroll...'; celebrate(() => { opens.forEach((f) => f()); all.hidden = true; }); };
+  const wrap = el('section'); wrap.append(el('h2', 'And the winners are'), box, list, makeRater('ceremony', 'How was the award ceremony?'));
   main.replaceChildren(wrap);
 }
 check(); timer = setInterval(check, 15000);

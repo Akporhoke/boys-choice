@@ -5,6 +5,13 @@ const h = (tag, attrs = {}, ...kids) => {
   kids.flat().forEach((c) => el.append(c));
   return el;
 };
+// Ceremony start. Change this line if the time changes (+01:00 is Nigerian time).
+const CEREMONY = new Date('2026-11-30T00:00:00+01:00');
+// Funny lines shown while a vote is sending, and on the thank-you screen
+const SENDING = ['Counting your votes...', 'Checking if you voted for yourself...', 'Asking the group chat ghost for permission...', 'Almost done. Stop refreshing.'];
+const QUIPS = ['Vote sealed. Some people are about to be very upset.', 'Democracy has spoken. Somebody is already complaining in the group chat.',
+  'Your vote is locked in. No take-backs, no excuses.', 'Done. Now go and pretend you did not vote for your friend.',
+  'Vote received. The group chat ghost has been notified and will reply in 3 to 5 working days.'];
 const main = document.getElementById('main');
 const api = (url, body) => fetch(url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {})
   .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || 'Something went wrong. Try again.'); return d; });
@@ -13,6 +20,20 @@ const api = (url, body) => fetch(url, body ? { method: 'POST', headers: { 'Conte
 const token = localStorage.getItem('bc_token') || (() => { const t = crypto.randomUUID(); localStorage.setItem('bc_token', t); return t; })();
 const state = { name: '', code: '', cats: [], i: 0, picks: {} };
 const show = (...nodes) => { main.replaceChildren(...nodes); window.scrollTo(0, 0); };
+
+// Live countdown to the ceremony. It stops by itself when the screen changes.
+function countdown() {
+  const el = h('p', { class: 'count', 'aria-live': 'off' });
+  const tick = () => {
+    const ms = CEREMONY - Date.now();
+    if (ms <= 0) { el.textContent = 'The ceremony is today!'; return; }
+    const d = Math.floor(ms / 864e5), hr = Math.floor(ms / 36e5) % 24, mi = Math.floor(ms / 6e4) % 60, se = Math.floor(ms / 1e3) % 60;
+    el.textContent = `${d} days ${hr}h ${mi}m ${se}s to the ceremony`;
+  };
+  tick();
+  const t = setInterval(() => (el.isConnected ? tick() : clearInterval(t)), 1000);
+  return el;
+}
 
 async function start() {
   const ballot = await api('/api/ballot');
@@ -35,7 +56,9 @@ async function start() {
   });
   show(h('section', { class: 'panel entry' },
     h('h1', {}, "The Boys' Choice Awards"),
-    h('p', {}, 'Ceremony on November 30. Pick one nominee in each category. You can vote once.'),
+    countdown(),
+    h('p', { class: 'voters' }, ballot.voters ? `${ballot.voters} ${ballot.voters === 1 ? 'boy has' : 'boys have'} voted so far.` : 'Be the first to vote.'),
+    h('p', {}, 'Pick one nominee in each category. You can vote once.'),
     h('label', { for: 'name' }, 'Your name'), name,
     ballot.needsCode ? [h('label', { for: 'code' }, 'Access code from the group'), code] : '',
     err, btn));
@@ -86,10 +109,12 @@ function review() {
   const send = h('button', { class: 'go', type: 'button' }, 'Submit my vote');
   send.addEventListener('click', async () => {
     send.disabled = true; err.textContent = '';
+    let k = 0; send.textContent = SENDING[0];                 // funny lines while the vote is sending
+    const cycle = setInterval(() => { send.textContent = SENDING[++k % SENDING.length]; }, 1400);
     try {
       await api('/api/vote', { name: state.name, code: state.code, token, picks: state.picks });
-      done('Your vote is in. See you on November 30.');
-    } catch (e) { err.textContent = e.message; send.disabled = false; }
+      clearInterval(cycle); done('Your vote is in. See you on November 30.');
+    } catch (e) { clearInterval(cycle); send.textContent = 'Submit my vote'; err.textContent = e.message; send.disabled = false; }
   });
   show(h('section', { class: 'panel' }, h('h2', {}, 'Your ballot'),
     h('ul', { class: 'review' }, state.cats.map((c) => {
@@ -103,14 +128,38 @@ function review() {
 
 async function done(msg) {
   document.body.classList.add('open');
-  const wrap = h('section', { class: 'done' }, h('h2', {}, 'Thank you'), h('p', {}, msg));
+  const count = h('p', { class: 'voters' }), ballotBox = h('div'), momentsBox = h('div');
+  const ballotBtn = h('button', { class: 'ghost', type: 'button' }, 'View my ballot');
+  const momentsBtn = h('button', { class: 'go', type: 'button', hidden: '' }, 'Relive the memories of 2026');   // shown once we know clips exist
+  const wrap = h('section', { class: 'done' }, h('h2', {}, 'Thank you'), h('p', {}, msg),
+    h('p', { class: 'quip' }, QUIPS[Math.floor(Math.random() * QUIPS.length)]), count,
+    makeRater('process', 'How was the nomination and voting process?'),   // from rate.js
+    h('div', { class: 'btnrow' }, ballotBtn, momentsBtn), ballotBox, momentsBox);
   show(wrap);
-  try {                                               // then load the clips; if none exist, show nothing extra
+  api('/api/count').then((d) => { count.textContent = `${d.voters} ${d.voters === 1 ? 'boy has' : 'boys have'} voted so far.`; }).catch(() => {});
+
+  // View my ballot: asks the server for THIS device's picks, tap again to hide
+  ballotBtn.addEventListener('click', async () => {
+    if (ballotBox.childElementCount) return ballotBox.replaceChildren();
+    try {
+      const { picks } = await api('/api/my-ballot?token=' + token);
+      if (!picks) return ballotBox.replaceChildren(h('p', {}, 'No ballot found on this device.'));
+      ballotBox.replaceChildren(h('section', { class: 'panel', style: 'margin-top:1.4rem' }, h('h2', {}, 'Your ballot'),
+        h('ul', { class: 'review' }, state.cats.map((c) => {
+          const n = c.nominees.find((x) => x.id === picks[c.id]);
+          return h('li', {}, h('span', {}, c.name), h('b', {}, n ? n.name : 'No pick'));
+        }))));
+    } catch (e) { ballotBox.replaceChildren(h('p', { class: 'err' }, e.message)); }
+  });
+
+  try {                                               // funny moments: the count comes from the files, so it is always right
     const list = await api('/api/moments');
     if (!list.length) return;
-    const open = h('button', { class: 'go', type: 'button', style: 'margin-top:2.5rem' }, `Watch funny 2026 moments (${list.length})`);
-    open.addEventListener('click', () => {
-      open.replaceWith(h('div', {}, h('h2', { class: 'mh' }, 'Funny 2026 moments'),
+    momentsBtn.textContent = `Relive the ${list.length} memories of 2026`; momentsBtn.hidden = false;
+    momentsBtn.addEventListener('click', () => {
+      momentsBtn.hidden = true;
+      momentsBox.replaceChildren(h('h2', { class: 'mh' }, 'Funny 2026 moments'),
+        h('p', { class: 'quip' }, `2026 presents ${list.length} amazing memories of the boys.`),
         h('div', { class: 'moments' }, list.map((m) => {
           if (m.type === 'video') {                   // clips: nothing downloads until the voter presses play
             return h('figure', { class: 'moment vid' },
@@ -121,9 +170,8 @@ async function done(msg) {
           const fig = h('figure', { class: 'moment' + (m.wide ? ' wide' : '') }, h('span', { class: 'frame' }, img), m.title ? h('figcaption', {}, m.title) : '');
           fig.addEventListener('click', () => fig.classList.toggle('big'));                         // tap a photo to enlarge it
           return fig;
-        }))));
+        })));
     });
-    wrap.append(open);
   } catch { /* clips are a bonus: ignore errors */ }
 }
 

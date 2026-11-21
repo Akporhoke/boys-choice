@@ -39,7 +39,10 @@ const limit = (req, res, next) => {
 };
 
 // Frontend asks: what are the categories, and is a code required?
-app.get('/api/ballot', (req, res) => res.json({ needsCode: !!VOTE_CODE, categories }));
+app.get('/api/ballot', (req, res) => res.json({ needsCode: !!VOTE_CODE, categories, voters: load().length }));
+
+// Public voter counter: just a number, no names.
+app.get('/api/count', (req, res) => res.json({ voters: load().length }));
 
 // Checks the code before the voter starts, so a wrong code is caught early.
 app.post('/api/enter', limit, (req, res) => {
@@ -97,6 +100,12 @@ app.get('/api/moments', (req, res) => {
 // Has this device already voted? (The server is the source of truth, so admin resets work.)
 app.get('/api/status', (req, res) => res.json({ voted: load().some((v) => v.token === req.query.token) }));
 
+// A voter can look at their OWN ballot: the secret device token is the key, so nobody else can read it.
+app.get('/api/my-ballot', limit, (req, res) => {
+  const mine = load().find((x) => x.token === req.query.token);
+  res.json({ picks: mine ? mine.picks : null });
+});
+
 // Reveal switch: the public results page stays locked until the admin turns this on.
 const SET = path.join(__dirname, 'data', 'settings.json');
 const revealed = () => { try { return !!JSON.parse(fs.readFileSync(SET, 'utf8')).revealed; } catch { return false; } };
@@ -131,6 +140,43 @@ app.post('/api/admin/reveal', limit, (req, res) => {
   if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
   fs.writeFileSync(SET, JSON.stringify({ revealed: !!(req.body && req.body.revealed) }));
   res.json({ ok: true });
+});
+
+// ---- Feedback: star ratings plus an optional note, stored without names ----
+const FB = path.join(__dirname, 'data', 'feedback.json');
+const loadFb = () => { try { return JSON.parse(fs.readFileSync(FB, 'utf8')); } catch { return []; } };
+const saveFb = (v) => { fs.writeFileSync(FB + '.tmp', JSON.stringify(v, null, 2)); fs.renameSync(FB + '.tmp', FB); };
+
+// type 'process' = rating the nomination and voting (only people who voted); 'ceremony' = after results open.
+app.post('/api/feedback', limit, (req, res) => {
+  const { token, type, rating, note } = req.body || {};
+  if (!/^[\w-]{16,64}$/.test(token || '')) return res.status(400).json({ error: 'Bad device token. Refresh and try again.' });
+  if (type !== 'process' && type !== 'ceremony') return res.status(400).json({ error: 'Unknown feedback type.' });
+  const stars = Number(rating);
+  if (!Number.isInteger(stars) || stars < 1 || stars > 5) return res.status(400).json({ error: 'Pick 1 to 5 stars.' });
+  if (type === 'process' && !load().some((x) => x.token === token)) return res.status(403).json({ error: 'Vote first, then rate the process.' });
+  if (type === 'ceremony' && !revealed()) return res.status(403).json({ error: 'Ceremony ratings open with the results.' });
+  const rest = loadFb().filter((f) => !(f.token === token && f.type === type));   // one per device per type
+  rest.push({ token, type, rating: stars, note: String(note || '').trim().slice(0, 500), at: new Date().toISOString() });
+  saveFb(rest);
+  res.json({ ok: true });
+});
+
+// Admin: averages plus every written note (newest first). No names, no tokens.
+app.get('/api/admin/feedback', limit, (req, res) => {
+  if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
+  const all = loadFb(), summary = {};
+  for (const t of ['process', 'ceremony']) {
+    const mine = all.filter((f) => f.type === t);
+    summary[t] = { count: mine.length, avg: mine.length ? mine.reduce((a, f) => a + f.rating, 0) / mine.length : 0 };
+  }
+  const notes = all.filter((f) => f.note).sort((a, b) => b.at.localeCompare(a.at)).map(({ type, rating, note, at }) => ({ type, rating, note, at }));
+  res.json({ summary, notes });
+});
+
+app.post('/api/admin/feedback/clear', limit, (req, res) => {
+  if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
+  saveFb([]); res.json({ ok: true });
 });
 
 // Retake: delete ONE person's ballot so they can vote again (matched by name).

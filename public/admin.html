@@ -49,6 +49,24 @@ async function load() {
     };
     out.append(clear);
 
+    // Feedback: averages and every written note, without names
+    const fb = await call('/api/admin/feedback');
+    out.append(el('h3', 'Feedback'));
+    for (const [t, label] of [['process', 'Nomination and voting process'], ['ceremony', 'Award ceremony']]) {
+      const s = fb.summary[t];
+      out.append(el('p', `${label}: ${s.count ? s.avg.toFixed(1) + ' out of 5 from ' + s.count + (s.count === 1 ? ' rating' : ' ratings') : 'no ratings yet'}`));
+    }
+    for (const f of fb.notes) {
+      const row = el('div', undefined, 'who');
+      row.append(el('span', `${f.type === 'process' ? 'Process' : 'Ceremony'}, ${f.rating}/5: ${f.note}`)); out.append(row);
+    }
+    const clearFb = el('button', 'Clear feedback', 'ghost danger'); clearFb.style.marginTop = '1rem';
+    clearFb.onclick = async () => {
+      if (!confirm('Delete all feedback ratings and notes?')) return;
+      try { await call('/api/admin/feedback/clear', {}); load(); } catch (e) { $('err').textContent = e.message; }
+    };
+    out.append(clearFb);
+
     out.append(el('h3', 'Results'));
     for (const c of d.categories) {
       const h = el('h3', c.name); h.style.fontSize = '1.5rem'; out.append(h);

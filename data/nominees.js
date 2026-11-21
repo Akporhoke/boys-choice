@@ -12,7 +12,9 @@ const categories = [
     n('eboh', 'Eboh Something', 'Ololoooo'), n('ogor', 'Ogor', 'Edo Batman'),
     n('agba', 'Agba-Baller', 'Hottest, Hotspot, Girls Dem Daddy'), n('ekpekpe', 'Ekpekpe Evans', 'Group Clown') ] },
   // Digital Presence: add nominees here when known. Categories with no nominees are hidden automatically.
-  { id: 'digital', name: 'Digital Presence', nominees: [] },
+  { id: 'digital', name: 'Digital Presence', nominees: [
+    n('oteme', 'Oteme Fejiro', 'Dr Headboy'), n('iguma', 'Iguma Emmanuel', "Jeff's Apparel"),
+    n('agba', 'Agba-Baller', 'Hottest, Hotspot, Girls Dem Daddy'), n('ekpekpe', 'Ekpekpe Evans', 'Group Clown') ] },
   { id: 'intellectual', name: 'Intellectual Excellence Award', nominees: [
     n('oteme', 'Oteme Fejiro', 'Medical Fact Series') ] },
   { id: 'redflag', name: 'Certified Red Flags', nominees: [
@@ -27,6 +29,9 @@ const categories = [
   { id: 'financial', name: 'Financially Challenged', nominees: [
     n('evanss', 'Evanss', 'Monkey dey work, monkey still poor'), n('otems', 'Otems', 'Headboy wey nor get money'),
     n('emmy', 'Emmy', 'Emma No Well'), n('hottest', 'Hottest', 'Opay') ] },
+  { id: 'ghost', name: 'Group Chat Ghost', nominees: [
+    n('hyacinth', 'Hyacinth', ''), n('courage', 'Courage', ''), n('joshua', 'Joshua', ''),
+    n('mene', 'Mene', ''), n('pako', 'Pako', '') ] },
   { id: 'sticker', name: 'Sticker of the Year', nominees: [
     n('sticker1', 'Sticker 1', ''), n('sticker2', 'Sticker 2', ''), n('sticker3', 'Sticker 3', ''),
     n('sticker4', 'Sticker 4', ''), n('sticker5', 'Sticker 5', ''), n('sticker6', 'Sticker 6', ''),
