@@ -39,6 +39,8 @@ async function start() {
   const ballot = await api('/api/ballot');
   state.cats = ballot.categories;
   if ((await api('/api/status?token=' + token)).voted) return done('You have already voted on this device.');
+  // NEW: if the admin closed voting, new voters see this instead of the entry screen (people who already voted still get their thank-you screen above)
+  if (ballot.closed) return show(h('section', { class: 'panel entry' }, h('h1', {}, 'Voting is closed'), h('p', {}, 'Results open at the ceremony on November 30.')));
   const err = h('p', { class: 'err', role: 'alert' });
   const name = h('input', { id: 'name', autocomplete: 'name', maxlength: 60 });
   const code = h('input', { id: 'code', autocomplete: 'off' });
@@ -73,6 +75,43 @@ function media(n) {
   return v;
 }
 
+// ---- NEW: tap feedback. A tiny "ting" sound plus a short vibration (vibration works on Android; iPhones ignore it). ----
+// Built in the browser, so no sound file is needed. Everything is wrapped in try/catch so it can never block a vote.
+let ac;
+function tick() {
+  try {
+    if (navigator.vibrate) navigator.vibrate(15);
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    if (ac.state === 'suspended') ac.resume();
+    const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(880, t); o.frequency.exponentialRampToValueAtTime(1320, t + 0.08);
+    g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);   // quiet and short
+    o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + 0.13);
+  } catch { /* no sound is fine */ }
+}
+
+// ---- NEW: confetti when the vote is sent (same effect as the results page; skipped if the phone asks for reduced motion) ----
+function confetti() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cv = document.createElement('canvas');
+  cv.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:50';
+  document.body.append(cv);                            // lives on the body, so it survives the screen change
+  const W = (cv.width = innerWidth), H = (cv.height = innerHeight), g = cv.getContext('2d');
+  const cols = ['#e8cf9a', '#b3252b', '#f6ead0', '#ffd36e'];
+  const bits = Array.from({ length: 160 }, () => ({ x: W / 2 + (Math.random() - .5) * W * .3, y: H * .55,
+    vx: (Math.random() - .5) * 14, vy: -Math.random() * 16 - 6, s: 5 + Math.random() * 6, r: Math.random() * 6,
+    vr: (Math.random() - .5) * .4, c: cols[Math.random() * 4 | 0] }));
+  let frame = 0;
+  (function step() {
+    g.clearRect(0, 0, W, H);
+    for (const p of bits) {
+      p.vy += .35; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+      g.save(); g.translate(p.x, p.y); g.rotate(p.r); g.fillStyle = p.c; g.fillRect(-p.s / 2, -p.s / 3, p.s, p.s * .6); g.restore();
+    }
+    if (++frame < 200) requestAnimationFrame(step); else cv.remove();   // removes itself when done
+  })();
+}
+
 // ---- NEW: info button support ----
 // Only one category screen exists at a time, so one shared record is enough: { btn, panel, set }.
 // category() fills it in on every draw; it is null when the category has no `info` text.
@@ -94,6 +133,7 @@ function category() {
     card.addEventListener('click', () => {
       const picking = state.picks[c.id] !== n.id;       // tap the same nominee again to un-pick
       state.picks[c.id] = picking ? n.id : undefined;
+      if (picking) tick();                              // NEW: tiny sound + vibration on a pick (not on un-pick)
       category();                                       // show the glow right away
       if (picking) {                                    // then move on by itself (one tap per category)
         const at = state.i;
@@ -150,7 +190,7 @@ function review() {
     const cycle = setInterval(() => { send.textContent = SENDING[++k % SENDING.length]; }, 1400);
     try {
       await api('/api/vote', { name: state.name, code: state.code, token, picks: state.picks });
-      clearInterval(cycle); done('Your vote is in. See you on November 30.');
+      clearInterval(cycle); confetti(); done('Your vote is in. See you on November 30.');   // NEW: confetti on a successful submit
     } catch (e) { clearInterval(cycle); send.textContent = 'Submit my vote'; err.textContent = e.message; send.disabled = false; }
   });
   show(h('section', { class: 'panel' }, h('h2', {}, 'Your ballot'),
@@ -165,14 +205,32 @@ function review() {
 
 async function done(msg) {
   document.body.classList.add('open');
-  const count = h('p', { class: 'voters' }), ballotBox = h('div'), momentsBox = h('div');
+  const count = h('p', { class: 'voters' }), ballotBox = h('div'), momentsBox = h('div'), cardBox = h('div');   // cardBox: NEW, holds the share card
   const ballotBtn = h('button', { class: 'ghost', type: 'button' }, 'View my ballot');
   const momentsBtn = h('button', { class: 'go', type: 'button', hidden: '' }, 'Relive the memories of 2026');   // shown once we know clips exist
   const wrap = h('section', { class: 'done' }, h('h2', {}, 'Thank you'), h('p', {}, msg),
-    h('p', { class: 'quip' }, QUIPS[Math.floor(Math.random() * QUIPS.length)]), count,
+    h('p', { class: 'quip' }, QUIPS[Math.floor(Math.random() * QUIPS.length)]), count, cardBox,
     makeRater('process', 'How was the nomination and voting process?'),   // from rate.js
     h('div', { class: 'btnrow' }, ballotBtn, momentsBtn), ballotBox, momentsBox);
   show(wrap);
+
+  // NEW: screenshot-friendly "I voted" card. It shows only HOW MANY categories were voted in, never who, so the ballot stays secret.
+  // The count comes from the server (this device's own ballot), so it is also right when someone comes back later.
+  api('/api/my-ballot?token=' + token).then(({ picks }) => {
+    if (!picks) return;
+    const line = `I voted in ${Object.keys(picks).length} of ${state.cats.length} categories.`;
+    const card = h('div', { class: 'votecard' },
+      h('p', { class: 'vc-title' }, "The Boys' Choice Awards"),
+      h('p', { class: 'vc-big' }, line),
+      state.name ? h('p', { class: 'vc-name' }, state.name) : '',
+      h('p', { class: 'vc-foot' }, 'Winners revealed November 30'));
+    cardBox.replaceChildren(card, h('p', { class: 'vc-hint' }, 'Screenshot it and post it in the group chat.'));
+    if (navigator.share) {                              // phones with a share sheet get a Share button too
+      const share = h('button', { class: 'ghost', type: 'button' }, 'Share');
+      share.addEventListener('click', () => navigator.share({ title: "The Boys' Choice Awards", text: line, url: location.origin }).catch(() => {}));
+      cardBox.append(share);
+    }
+  }).catch(() => {});                                   // the card is a bonus: ignore errors
   api('/api/count').then((d) => { count.textContent = `${d.voters} ${d.voters === 1 ? 'boy has' : 'boys have'} voted so far.`; }).catch(() => {});
 
   // View my ballot: asks the server for THIS device's picks, tap again to hide

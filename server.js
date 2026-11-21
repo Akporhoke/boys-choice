@@ -23,6 +23,14 @@ const save = (v) => { fs.writeFileSync(DB + '.tmp', JSON.stringify(v, null, 2));
 const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' '); // "  Ogor  " == "ogor"
 const codeOk = (c) => !VOTE_CODE || String(c || '').trim() === VOTE_CODE;
 
+// CHANGED: settings (reveal switch + NEW close-voting switch) live in one small file.
+// saveSettings MERGES a change into what is already there, so flipping one switch never erases the other.
+const SET = path.join(__dirname, 'data', 'settings.json');
+const readSettings = () => { try { return JSON.parse(fs.readFileSync(SET, 'utf8')); } catch { return {}; } };
+const saveSettings = (patch) => fs.writeFileSync(SET, JSON.stringify({ ...readSettings(), ...patch }));
+const revealed = () => !!readSettings().revealed;       // public results page open?
+const votingClosed = () => !!readSettings().closed;     // NEW: is voting closed?
+
 const adminOk = (req) => {
   const a = Buffer.from(req.get('x-admin-key') || ''), b = Buffer.from(ADMIN_KEY);
   return !!ADMIN_KEY && a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -38,20 +46,23 @@ const limit = (req, res, next) => {
   next();
 };
 
-// Frontend asks: what are the categories, and is a code required?
-app.get('/api/ballot', (req, res) => res.json({ needsCode: !!VOTE_CODE, categories, voters: load().length }));
+// Frontend asks: what are the categories, is a code required, and (NEW) is voting closed?
+app.get('/api/ballot', (req, res) => res.json({ needsCode: !!VOTE_CODE, closed: votingClosed(), categories, voters: load().length }));
 
 // Public voter counter: just a number, no names.
 app.get('/api/count', (req, res) => res.json({ voters: load().length }));
 
 // Checks the code before the voter starts, so a wrong code is caught early.
 app.post('/api/enter', limit, (req, res) => {
+  if (votingClosed()) return res.status(403).json({ error: 'Voting is closed.' });   // NEW
   if (!codeOk(req.body.code)) return res.status(403).json({ error: 'That access code is wrong.' });
   res.json({ ok: true });
 });
 
 // Submit one ballot. picks = { categoryId: nomineeId }, skipped categories are simply missing.
 app.post('/api/vote', limit, (req, res) => {
+  // NEW: the real lock. Even someone who was mid-ballot when the admin closed voting is turned away here.
+  if (votingClosed()) return res.status(403).json({ error: 'Voting is closed.' });
   const { name, code, token, picks } = req.body || {};
   if (!codeOk(code)) return res.status(403).json({ error: 'That access code is wrong.' });
   const who = norm(name);
@@ -106,10 +117,6 @@ app.get('/api/my-ballot', limit, (req, res) => {
   res.json({ picks: mine ? mine.picks : null });
 });
 
-// Reveal switch: the public results page stays locked until the admin turns this on.
-const SET = path.join(__dirname, 'data', 'settings.json');
-const revealed = () => { try { return !!JSON.parse(fs.readFileSync(SET, 'utf8')).revealed; } catch { return false; } };
-
 // Count votes per nominee, highest first. Used by both the admin and the public results.
 const tally = (votes) => categories.map((c) => ({
   id: c.id, name: c.name,
@@ -123,7 +130,7 @@ app.get('/api/results', limit, (req, res) => {
   if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
   const votes = load();
   res.json({
-    voters: votes.length, revealed: revealed(),
+    voters: votes.length, revealed: revealed(), closed: votingClosed(),   // CHANGED: also tells the admin page if voting is closed
     people: votes.map((v) => ({ key: v.name, name: v.display || v.name, at: v.at })),
     categories: tally(votes),
   });
@@ -135,10 +142,17 @@ app.get('/api/public-results', (req, res) => {
   res.json({ revealed: true, categories: tally(load()) });
 });
 
-// Admin flips the public results page open or closed.
+// Admin flips the public results page open or closed. CHANGED: merges into settings instead of overwriting them.
 app.post('/api/admin/reveal', limit, (req, res) => {
   if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
-  fs.writeFileSync(SET, JSON.stringify({ revealed: !!(req.body && req.body.revealed) }));
+  saveSettings({ revealed: !!(req.body && req.body.revealed) });
+  res.json({ ok: true });
+});
+
+// NEW: admin closes or reopens voting. While closed, /api/vote and /api/enter refuse everyone.
+app.post('/api/admin/close', limit, (req, res) => {
+  if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
+  saveSettings({ closed: !!(req.body && req.body.closed) });
   res.json({ ok: true });
 });
 

@@ -25,10 +25,22 @@ async function load() {
     const d = await call('/api/results');
     const out = $('out'); out.replaceChildren();
     out.append(el('p', `${d.voters} people have voted.`));
+
+    // NEW: Close / reopen voting. While closed, nobody can submit a ballot (the server refuses it).
+    const state = el('p', d.closed ? 'Voting is CLOSED: no new ballots are accepted.' : 'Voting is OPEN.'); state.style.marginTop = '1.4rem';
+    const cl = el('button', d.closed ? 'Reopen voting' : 'Close voting', d.closed ? 'go' : 'ghost danger');
+    cl.onclick = async () => {
+      if (!d.closed && !confirm('Close voting? Nobody will be able to submit a ballot until you reopen it.')) return;   // only ask before closing
+      try { await call('/api/admin/close', { closed: !d.closed }); load(); } catch (e) { $('err').textContent = e.message; }
+    };
+    out.append(state, cl);
+
     // Reveal switch for the public results page (/results.html)
     const rv = el('button', d.revealed ? 'Hide results from everyone' : 'Show results to everyone', d.revealed ? 'ghost' : 'go');
     rv.onclick = async () => { try { await call('/api/admin/reveal', { revealed: !d.revealed }); load(); } catch (e) { $('err').textContent = e.message; } };
-    out.append(el('p', d.revealed ? 'Results page is OPEN: everyone can see the winners at /results.html.' : 'Results page is LOCKED: voters see that results open on the night.'), rv);
+    const rvState = el('p', d.revealed ? 'Results page is OPEN: everyone can see the winners at /results.html.' : 'Results page is LOCKED: voters see that results open on the night.');
+    rvState.style.marginTop = '1.4rem';
+    out.append(rvState, rv);
 
     // Registered names: the admin sees WHO voted, never WHAT they picked
     out.append(el('h3', 'Registered voters'));
