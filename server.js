@@ -89,7 +89,8 @@ app.get('/api/moments', (req, res) => {
       type: isVid(f) ? 'video' : 'image',
       src: url(f),
       poster: isVid(f) && all.includes(base(f) + '.jpg') ? url(base(f) + '.jpg') : '',
-      title: base(f).replace(/^\d+[-_. ]*/, '').replace(/[-_]+/g, ' ').trim(),   // empty when the name is only a number
+      wide: /(^|[-_ ])wide$/i.test(base(f)),                                         // name ending in -wide (24-wide.jpg) = shown full width
+      title: base(f).replace(/^\d+[-_. ]*/, '').replace(/(^|[-_ ])wide$/i, '').replace(/[-_]+/g, ' ').trim(),   // empty when the name is only a number
     })));
 });
 

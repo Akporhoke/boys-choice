@@ -28,7 +28,7 @@ async function check() {
     return main.replaceChildren(p);
   }
   if (shown) return; shown = true; clearInterval(timer);
-  document.body.classList.add('open'); setTimeout(() => render(d), 900);
+  render(d); document.body.classList.add('reveal', 'open');   // curtains part in front of the winners page
 }
 
 function render(d) {

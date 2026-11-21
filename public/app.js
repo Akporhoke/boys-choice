@@ -29,8 +29,8 @@ async function start() {
     try {
       if (ballot.needsCode) await api('/api/enter', { code: code.value });
       state.name = name.value.trim(); state.code = code.value;
-      document.body.classList.add('open');            // curtains slide open
-      setTimeout(category, 350);                      // first category appears as they part
+      category();                                     // the first category is already there, behind the curtains
+      document.body.classList.add('reveal', 'open');  // curtains come in front of it, then part to reveal it
     } catch (e) { err.textContent = e.message; btn.disabled = false; }
   });
   show(h('section', { class: 'panel entry' },
@@ -118,7 +118,7 @@ async function done(msg) {
               m.title ? h('figcaption', {}, m.title) : '');
           }
           const img = h('img', { src: m.src, alt: m.title || 'Funny moment', loading: 'lazy' });   // lazy: loads only as you scroll
-          const fig = h('figure', { class: 'moment' }, h('span', { class: 'frame' }, img), m.title ? h('figcaption', {}, m.title) : '');
+          const fig = h('figure', { class: 'moment' + (m.wide ? ' wide' : '') }, h('span', { class: 'frame' }, img), m.title ? h('figcaption', {}, m.title) : '');
           fig.addEventListener('click', () => fig.classList.toggle('big'));                         // tap a photo to enlarge it
           return fig;
         }))));
