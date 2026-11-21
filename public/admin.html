@@ -65,37 +65,51 @@ async function load() {
     rvState.style.marginTop = '1.4rem';
     out.append(rvState, rv);
 
-    // NEW: The Boys Quiz editor. 6 questions, up to 4 options each, one correct answer ticked per question.
-    const qd = await call('/api/admin/quiz');
+    // CHANGED: The Boys Quiz editor. A pool of up to 20 questions; every time someone plays, the server picks 6 of them at random.
+    const qd = await call('/api/admin/quiz');                      // { questions:[{id,q,options,answer}], max:20, need:6 }
     out.append(el('h3', 'The Boys Quiz'));
-    out.append(el('p', 'Set the 6 questions. Tick the circle next to the correct answer. Leave an option empty to use fewer than 4 (at least 2 needed). The quiz goes live for voters when all 6 are filled in.'));
-    const qBlocks = [];
-    qd.questions.forEach((x, n) => {
-      const box = el('div'); box.style.margin = '1.2rem 0';
-      const lab = el('label', `Question ${n + 1}`), qi = el('input');
-      qi.id = 'quizq' + n; lab.htmlFor = qi.id; qi.maxLength = 200; qi.value = x.q; qi.placeholder = 'Type the question';
-      box.append(lab, qi);
-      const opts = [];
+    out.append(el('p', `Add up to ${qd.max} questions. Each time someone plays, ${qd.need} of them are picked at random. Tick the circle next to the correct answer. Leave an option empty to use fewer than 4 (at least 2 needed). The quiz goes live once you have at least ${qd.need} questions. Press Save quiz to keep your changes.`));
+    const qList = el('div'), qBlocks = [], qCount = el('p');       // qBlocks = one record per question box on the screen
+    const addQ = el('button', 'Add a question', 'ghost'); addQ.type = 'button';
+    let uid = 0;                                                   // gives every box its own radio-group name
+    // Renumbers the boxes ("Question 1, 2, 3...") and updates the counter. Called after every add or delete.
+    const refresh = () => {
+      qBlocks.forEach((b, k) => { b.lab.textContent = `Question ${k + 1}`; });
+      qCount.textContent = `${qBlocks.length} of ${qd.max} questions`;
+      addQ.disabled = qBlocks.length >= qd.max;
+    };
+    // Builds one question box: label, question field, 4 option rows (each with a round "correct" tick) and a Delete button.
+    const addBlock = (x) => {
+      const n = ++uid, b = { id: x.id || '', box: el('div'), lab: el('label'), qi: el('input'), opts: [] };
+      b.box.style.margin = '1.2rem 0';
+      b.qi.id = 'quizq' + n; b.lab.htmlFor = b.qi.id; b.qi.maxLength = 200; b.qi.value = x.q || ''; b.qi.placeholder = 'Type the question';
+      b.box.append(b.lab, b.qi);
       for (let i = 0; i < 4; i++) {
-        const row = el('div', undefined, 'qrow');
-        const rad = el('input'); rad.type = 'radio'; rad.name = 'quizans' + n; rad.checked = x.answer === i;
-        rad.setAttribute('aria-label', `Option ${i + 1} is the correct answer for question ${n + 1}`);
-        const t = el('input'); t.maxLength = 100; t.value = x.options[i] || ''; t.placeholder = `Option ${i + 1}`;
-        t.setAttribute('aria-label', `Question ${n + 1}, option ${i + 1}`);
-        row.append(rad, t); box.append(row); opts.push({ rad, t });
+        const row = el('div', undefined, 'qrow'), rad = el('input'), t = el('input');
+        rad.type = 'radio'; rad.name = 'quizans' + n; rad.checked = x.answer === i;
+        t.maxLength = 100; t.value = (x.options && x.options[i]) || ''; t.placeholder = `Option ${i + 1}`;
+        rad.setAttribute('aria-label', `Option ${i + 1} is the correct answer`); t.setAttribute('aria-label', `Option ${i + 1}`);
+        row.append(rad, t); b.box.append(row); b.opts.push({ rad, t });
       }
-      qBlocks.push({ qi, opts }); out.append(box);
-    });
+      const del = el('button', 'Delete this question', 'ghost danger'); del.type = 'button'; del.style.marginTop = '.4rem';
+      del.onclick = () => { qBlocks.splice(qBlocks.indexOf(b), 1); b.box.remove(); refresh(); };   // removed from the screen; it is gone for good after Save quiz
+      b.box.append(del); qBlocks.push(b); qList.append(b.box); refresh();
+    };
+    addQ.onclick = () => addBlock({});
+    qd.questions.forEach(addBlock);                                // show the saved questions
+    if (!qd.questions.length) addBlock({});                        // brand new quiz: start with one empty box
     const saveQ = el('button', 'Save quiz', 'go'), qMsg = el('p'); qMsg.setAttribute('role', 'status');
+    saveQ.style.marginLeft = '.6rem';
     saveQ.onclick = async () => {
       qMsg.className = ''; qMsg.textContent = '';
-      const questions = qBlocks.map((b) => ({ q: b.qi.value, options: b.opts.map((o) => o.t.value), answer: Math.max(0, b.opts.findIndex((o) => o.rad.checked)) }));
+      // answer = which round tick is chosen (-1 when none, which the server turns into a clear error message)
+      const questions = qBlocks.map((b) => ({ id: b.id, q: b.qi.value, options: b.opts.map((o) => o.t.value), answer: b.opts.findIndex((o) => o.rad.checked) }));
       try {
         const r = await call('/api/admin/quiz', { questions });
-        qMsg.textContent = r.ready ? 'Saved. The quiz is live.' : 'Saved, but not live yet: all 6 questions must be filled in.';
+        qMsg.textContent = r.ready ? `Saved ${r.count} questions. The quiz is live.` : `Saved ${r.count} questions, but not live yet: you need at least ${qd.need}.`;
       } catch (e) { qMsg.className = 'err'; qMsg.textContent = e.message; }   // shown right here, next to the button
     };
-    out.append(saveQ, qMsg);
+    out.append(qCount, qList, addQ, saveQ, qMsg);
 
     // Registered names: the admin sees WHO voted, never WHAT they picked
     out.append(el('h3', 'Registered voters'));

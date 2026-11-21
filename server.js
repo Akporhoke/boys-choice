@@ -11,7 +11,10 @@ const ADMIN_KEY = process.env.ADMIN_KEY || '';            // empty = results loc
 const DB = path.join(__dirname, 'data', 'votes.json');    // all votes live in this file
 
 const app = express();
-app.use(express.json({ limit: '10kb' }));                 // read JSON bodies, reject huge ones
+// NEW: Render puts one proxy in front of the site. Without this line every visitor looks like the SAME IP address,
+// so the rate limit below would be shared by everyone and could block people during a voting rush.
+app.set('trust proxy', 1);
+app.use(express.json({ limit: '60kb' }));                 // CHANGED: was 10kb. A quiz of 20 questions needs more room.
 // Serve the frontend. Photos and videos are cached by the phone for a day, so repeat visits are instant.
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, p) => { if (/[\\/](img|videos)[\\/]/.test(p)) res.setHeader('Cache-Control', 'public, max-age=86400'); },
@@ -37,6 +40,17 @@ const votingState = () => {
   if (s.opensAt && Date.now() < Date.parse(s.opensAt)) return 'soon';
   return 'open';
 };
+
+// NEW: LOCK AFTER EVERY UPDATE. Render tells the server which version of the code is running (RENDER_GIT_COMMIT).
+// Each time that version is new (you pushed an update), voting is locked and the admin has to press "Reopen voting".
+// The version we already locked for is remembered in settings.json, so an ordinary restart of the SAME version does not lock again
+// (as long as the file survives; on free Render it is wiped, which also counts as "new" and locks, which is the safe direction).
+// Locally there is no RENDER_GIT_COMMIT, so nothing locks while you test. To switch this off, set LOCK_ON_DEPLOY=false on Render.
+const deployed = process.env.RENDER_GIT_COMMIT || '';
+if (deployed && process.env.LOCK_ON_DEPLOY !== 'false' && readSettings().lockedFor !== deployed) {
+  saveSettings({ closed: true, lockedFor: deployed });
+  console.log('New version detected: voting is locked until the admin reopens it.');
+}
 
 const adminOk = (req) => {
   const a = Buffer.from(req.get('x-admin-key') || ''), b = Buffer.from(ADMIN_KEY);
@@ -179,57 +193,79 @@ app.post('/api/admin/opens', limit, (req, res) => {
   res.json({ ok: true });
 });
 
-// ---- NEW: The Boys Quiz. Exactly 6 questions, set by the admin, stored in data/quiz.json ----
-// Each slot: { q: "question", options: [4 strings, blank = unused], answer: index 0-3 of the correct option }.
+// ---- CHANGED: The Boys Quiz. A pool of up to 20 questions; every play gets 6 of them picked at random. ----
+// Stored in data/quiz.json (the same file as before, so questions you already saved carry over).
+// Each question: { id, q: "question", options: [4 strings, blank = unused], answer: index 0-3 of the correct option }.
 const QZ = path.join(__dirname, 'data', 'quiz.json');
-const blankQ = () => ({ q: '', options: ['', '', '', ''], answer: 0 });
-const loadQuiz = () => {
-  try { const a = JSON.parse(fs.readFileSync(QZ, 'utf8')); if (Array.isArray(a)) return Array.from({ length: 6 }, (_, i) => ({ ...blankQ(), ...a[i] })); } catch {}
-  return Array.from({ length: 6 }, blankQ);             // nothing saved yet = 6 empty slots
+const QMAX = 20, QNEED = 6;                              // most questions kept / questions per play
+// Cleans one question: trims and shortens text, always 4 option slots, keeps its id (or uses the fallback).
+const qClean = (x, fallbackId) => {
+  if (!x || typeof x !== 'object') return null;
+  const o = Array.isArray(x.options) ? x.options : [];
+  return {
+    id: /^[a-z0-9]{4,16}$/i.test(String(x.id || '')) ? String(x.id) : fallbackId,
+    q: String(x.q || '').trim().slice(0, 200),
+    options: [0, 1, 2, 3].map((i) => String(o[i] || '').trim().slice(0, 100)),
+    answer: Number.isInteger(x.answer) ? x.answer : -1,
+  };
 };
 // A question is usable when it has text, at least 2 filled options, and the marked correct option is filled.
-const qValid = (x) => !!x.q && x.options.filter(Boolean).length >= 2 && !!x.options[x.answer];
-const quizReady = (qz) => qz.every(qValid);              // the quiz only goes live when all 6 are usable
+const qValid = (x) => !!(x && x.q && x.options.filter(Boolean).length >= 2 && x.answer >= 0 && x.answer < 4 && x.options[x.answer]);
+// Reads the pool. Old 6-slot files still work: empty slots are dropped and the others get ids like "old0".
+const loadQuiz = () => {
+  try { const a = JSON.parse(fs.readFileSync(QZ, 'utf8')); if (Array.isArray(a)) return a.map((x, i) => qClean(x, 'old' + i)).filter(qValid); } catch {}
+  return [];                                             // nothing saved yet
+};
+// Fisher-Yates shuffle using crypto.randomInt, so every question has the same chance of being picked.
+const qShuffle = (arr) => {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+};
 
-// Public: the questions WITHOUT the answers. If the quiz is not ready, voters just see "coming soon".
+// Public: a fresh random set of 6 questions WITHOUT the answers. With fewer than 6 saved, voters just see "coming soon".
 app.get('/api/quiz', (req, res) => {
-  const qz = loadQuiz();
-  if (!quizReady(qz)) return res.json({ ready: false });
-  res.json({ ready: true, questions: qz.map((x) => ({ q: x.q, options: x.options.map((t, i) => ({ i, t })).filter((o) => o.t) })) });
+  res.set('Cache-Control', 'no-store');                  // never let a phone reuse an old random set
+  const pool = loadQuiz();
+  if (pool.length < QNEED) return res.json({ ready: false });
+  res.json({ ready: true, questions: qShuffle(pool).slice(0, QNEED).map((x) => ({
+    id: x.id, q: x.q, options: x.options.map((t, i) => ({ i, t })).filter((o) => o.t) })) });
 });
 
 // Public: marking happens here, so the right answers never reach the browser until the voter has finished.
+// The browser sends the 6 ids it was given plus the option numbers it chose; answers[k] goes with ids[k].
 app.post('/api/quiz/check', limit, (req, res) => {
-  const qz = loadQuiz();
-  if (!quizReady(qz)) return res.status(409).json({ error: 'The quiz is not ready yet.' });
-  const given = Array.isArray(req.body && req.body.answers) ? req.body.answers : [];
-  const correct = qz.map((x) => x.answer);
-  res.json({ score: correct.filter((c, i) => given[i] === c).length, total: 6, correct });
+  const { ids, answers } = req.body || {};
+  if (!Array.isArray(ids) || !Array.isArray(answers) || ids.length !== QNEED || new Set(ids).size !== QNEED)
+    return res.status(400).json({ error: 'Something went wrong. Start the quiz again.' });
+  const byId = new Map(loadQuiz().map((x) => [x.id, x]));
+  const picked = ids.map((id) => byId.get(String(id)));
+  if (picked.some((x) => !x)) return res.status(400).json({ error: 'The quiz was just updated. Start it again.' });
+  const correct = picked.map((x) => x.answer);
+  res.json({ score: picked.filter((x, k) => answers[k] === x.answer).length, total: QNEED, correct });
 });
 
-// Admin: read the 6 slots (including the right answers)...
+// Admin: read the whole pool (including the right answers) for the editor.
 app.get('/api/admin/quiz', limit, (req, res) => {
   if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
-  const qz = loadQuiz();
-  res.json({ questions: qz, ready: quizReady(qz) });
+  res.json({ questions: loadQuiz(), max: QMAX, need: QNEED });
 });
 
-// ...and save them. A slot may be left fully empty (the quiz just stays hidden), but a slot with anything in it must be complete.
+// Admin: replace the whole pool. Untouched blank boxes are skipped; half-filled ones are rejected with a clear message.
 app.post('/api/admin/quiz', limit, (req, res) => {
   if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
   const raw = req.body && req.body.questions;
-  if (!Array.isArray(raw) || raw.length !== 6) return res.status(400).json({ error: 'Send exactly 6 questions.' });
-  const clean = raw.map((x) => ({
-    q: String((x && x.q) || '').trim().slice(0, 200),
-    options: Array.from({ length: 4 }, (_, i) => String((x && x.options && x.options[i]) || '').trim().slice(0, 100)),
-    answer: Number.isInteger(x && x.answer) && x.answer >= 0 && x.answer < 4 ? x.answer : 0,
-  }));
-  for (const [i, x] of clean.entries()) {
-    if ((x.q || x.options.some(Boolean)) && !qValid(x))
-      return res.status(400).json({ error: `Question ${i + 1} needs the question, at least 2 options, and a correct answer that is filled in.` });
+  if (!Array.isArray(raw) || raw.length > QMAX) return res.status(400).json({ error: `Send at most ${QMAX} questions.` });
+  const out = [], seen = new Set();
+  for (let k = 0; k < raw.length; k++) {
+    const x = qClean(raw[k], crypto.randomBytes(4).toString('hex'));
+    if (!x || (!x.q && !x.options.some(Boolean))) continue;          // an untouched blank box is simply skipped
+    if (!qValid(x)) return res.status(400).json({ error: `Question ${k + 1} needs the question, at least 2 options, and the correct answer ticked on a filled option.` });
+    if (seen.has(x.id)) x.id = crypto.randomBytes(4).toString('hex'); // never two questions with the same id
+    seen.add(x.id); out.push(x);
   }
-  fs.writeFileSync(QZ, JSON.stringify(clean, null, 2));
-  res.json({ ok: true, ready: quizReady(clean) });
+  fs.writeFileSync(QZ + '.tmp', JSON.stringify(out, null, 2)); fs.renameSync(QZ + '.tmp', QZ);   // temp file then rename, so a crash never leaves half a file
+  res.json({ ok: true, ready: out.length >= QNEED, count: out.length });
 });
 
 // ---- Feedback: star ratings plus an optional note, stored without names ----

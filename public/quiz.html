@@ -15,22 +15,29 @@ const api = (url, body) => fetch(url, body ? { method: 'POST', headers: { 'Conte
   .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || 'Something went wrong. Try again.'); return d; });
 const home = () => { const b = el('button', 'Back to the awards', 'ghost'); b.type = 'button'; b.onclick = () => { location.href = '/'; }; return b; };
 
-// The questions come from the server WITHOUT the answers. state.answers[n] = the option number the voter chose for question n.
+// state.qs = the 6 questions the server picked for THIS round (each has an id, the text and options WITHOUT answers).
+// state.answers[n] = the option number the voter chose for question n.
 const state = { qs: [], i: 0, answers: [] };
 
-// Step 1: ask the server for the quiz. If the admin has not filled in all 6 questions, show "coming soon".
-async function start() {
+// CHANGED: asks the server for a fresh random set of 6 questions. Returns false when the quiz is not ready yet.
+async function fetchSet() {
   const d = await api('/api/quiz');
-  if (!d.ready) {
+  if (!d.ready) return false;
+  state.qs = d.questions; state.i = 0; state.answers = [];
+  return true;
+}
+
+// Step 1: the intro screen. If the admin has fewer than 6 questions saved, show "coming soon".
+async function start() {
+  if (!(await fetchSet())) {
     const p = el('section', undefined, 'panel entry');
     p.append(el('h1', 'The Boys Quiz'), el('p', 'The quiz is coming soon. Check back later.'), home());
     return show(p);
   }
-  state.qs = d.questions;
   const go = el('button', 'Start the quiz', 'go'); go.type = 'button';
-  go.onclick = () => { state.i = 0; state.answers = []; question(); };
+  go.onclick = question;                                // this round's questions are already loaded
   const p = el('section', undefined, 'panel entry');
-  p.append(el('h1', 'The Boys Quiz'), el('p', `${state.qs.length} questions. Find out who really knows the boys.`), go);
+  p.append(el('h1', 'The Boys Quiz'), el('p', `${state.qs.length} questions picked at random. Find out who really knows the boys.`), go);
   show(p);
 }
 
@@ -58,7 +65,8 @@ function question() {
 // Step 3: the server marks the answers (it is the only one that knows them) and sends back the score and the right options.
 async function finish() {
   try {
-    const r = await api('/api/quiz/check', { answers: state.answers });
+    // CHANGED: the ids tell the server WHICH 6 questions were asked this round, answers[n] goes with ids[n].
+    const r = await api('/api/quiz/check', { ids: state.qs.map((q) => q.id), answers: state.answers });
     const say = r.score === r.total ? 'Perfect score. You are the group chat source of truth.'
       : r.score >= 4 ? 'Strong. You really do pay attention.'
       : r.score >= 2 ? 'Not bad, but some of the boys are still strangers to you.'
@@ -71,7 +79,12 @@ async function finish() {
       if (!right) row.append(el('p', `Correct answer: ${text(n, r.correct[n])}`));
       review.append(row);
     });
-    const again = el('button', 'Play again', 'ghost'); again.type = 'button'; again.onclick = () => { state.i = 0; state.answers = []; question(); };
+    // CHANGED: "Play again" asks the server for a NEW random set of 6, so every round is different.
+    const again = el('button', 'Play again', 'ghost'); again.type = 'button';
+    again.onclick = async () => {
+      again.disabled = true;
+      try { (await fetchSet()) ? question() : start(); } catch (e) { again.disabled = false; show(el('p', e.message, 'err')); }
+    };
     const btns = el('div', undefined, 'btnrow'); btns.append(again, home());
     const p = el('section', undefined, 'panel'); p.style.textAlign = 'center';
     p.append(el('h2', `You got ${r.score} of ${r.total}`, 'q-score'), el('p', say, 'quip'), review, btns);
