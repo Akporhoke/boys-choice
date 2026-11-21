@@ -17,7 +17,7 @@ const show = (...nodes) => { main.replaceChildren(...nodes); window.scrollTo(0, 
 async function start() {
   const ballot = await api('/api/ballot');
   state.cats = ballot.categories;
-  if (localStorage.getItem('bc_voted')) return done('You have already voted on this device.');
+  if ((await api('/api/status?token=' + token)).voted) return done('You have already voted on this device.');
   const err = h('p', { class: 'err', role: 'alert' });
   const name = h('input', { id: 'name', autocomplete: 'name', maxlength: 60 });
   const code = h('input', { id: 'code', autocomplete: 'off' });
@@ -71,7 +71,7 @@ function review() {
     send.disabled = true; err.textContent = '';
     try {
       await api('/api/vote', { name: state.name, code: state.code, token, picks: state.picks });
-      localStorage.setItem('bc_voted', '1'); done('Your vote is in. See you on November 30.');
+      done('Your vote is in. See you on November 30.');
     } catch (e) { err.textContent = e.message; send.disabled = false; }
   });
   show(h('section', { class: 'panel' }, h('h2', {}, 'Your ballot'),

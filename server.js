@@ -2,6 +2,7 @@ require('dotenv').config();                       // load .env into process.env
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { categories } = require('./data/nominees');
 
 const PORT = process.env.PORT || 3000;
@@ -18,6 +19,11 @@ const load = () => { try { return JSON.parse(fs.readFileSync(DB, 'utf8')); } cat
 const save = (v) => { fs.writeFileSync(DB + '.tmp', JSON.stringify(v, null, 2)); fs.renameSync(DB + '.tmp', DB); };
 const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' '); // "  Ogor  " == "ogor"
 const codeOk = (c) => !VOTE_CODE || String(c || '').trim() === VOTE_CODE;
+
+const adminOk = (req) => {
+  const a = Buffer.from(req.get('x-admin-key') || ''), b = Buffer.from(ADMIN_KEY);
+  return !!ADMIN_KEY && a.length === b.length && crypto.timingSafeEqual(a, b);
+};
 
 // Tiny rate limit: max 20 requests per minute per IP on the voting routes.
 const hits = new Map();
@@ -58,17 +64,21 @@ app.post('/api/vote', limit, (req, res) => {
   const votes = load();
   if (votes.some((v) => v.name === who || v.token === token))   // one ballot per name AND per device
     return res.status(409).json({ error: 'This name or device has already voted.' });
-  votes.push({ name: who, token, picks: clean, at: new Date().toISOString() });
+  votes.push({ name: who, display: String(name).trim().slice(0, 60), token, picks: clean, at: new Date().toISOString() });
   save(votes);
   res.json({ ok: true });
 });
 
+// Has this device already voted? (The server is the source of truth, so admin resets work.)
+app.get('/api/status', (req, res) => res.json({ voted: load().some((v) => v.token === req.query.token) }));
+
 // Results are private: only with the admin key (sent in a header, never in the URL).
-app.get('/api/results', (req, res) => {
-  if (!ADMIN_KEY || req.get('x-admin-key') !== ADMIN_KEY) return res.status(401).json({ error: 'Wrong admin key.' });
+app.get('/api/results', limit, (req, res) => {
+  if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
   const votes = load();
   res.json({
     voters: votes.length,
+    people: votes.map((v) => ({ key: v.name, name: v.display || v.name, at: v.at })),  // names only, no picks
     categories: categories.map((c) => ({
       id: c.id, name: c.name,
       nominees: c.nominees
@@ -76,6 +86,21 @@ app.get('/api/results', (req, res) => {
         .sort((a, b) => b.votes - a.votes),
     })),
   });
+});
+
+// Retake: delete ONE person's ballot so they can vote again (matched by name).
+app.post('/api/admin/retake', limit, (req, res) => {
+  if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
+  const key = norm(req.body && req.body.name);
+  const votes = load(), rest = votes.filter((v) => v.name !== key);
+  if (rest.length === votes.length) return res.status(404).json({ error: 'No ballot found for that name.' });
+  save(rest); res.json({ ok: true });
+});
+
+// Clear: delete EVERY ballot, so the results reset to zero and everyone can vote again.
+app.post('/api/admin/clear', limit, (req, res) => {
+  if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
+  save([]); res.json({ ok: true });
 });
 
 app.listen(PORT, () => console.log(`Awards site running on http://localhost:${PORT}`));
