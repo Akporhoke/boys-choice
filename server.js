@@ -83,20 +83,40 @@ app.get('/api/moments', (req, res) => {
 // Has this device already voted? (The server is the source of truth, so admin resets work.)
 app.get('/api/status', (req, res) => res.json({ voted: load().some((v) => v.token === req.query.token) }));
 
-// Results are private: only with the admin key (sent in a header, never in the URL).
+// Reveal switch: the public results page stays locked until the admin turns this on.
+const SET = path.join(__dirname, 'data', 'settings.json');
+const revealed = () => { try { return !!JSON.parse(fs.readFileSync(SET, 'utf8')).revealed; } catch { return false; } };
+
+// Count votes per nominee, highest first. Used by both the admin and the public results.
+const tally = (votes) => categories.map((c) => ({
+  id: c.id, name: c.name,
+  nominees: c.nominees
+    .map((x) => ({ ...x, votes: votes.filter((v) => v.picks[c.id] === x.id).length }))
+    .sort((a, b) => b.votes - a.votes),
+}));
+
+// Admin results: needs the admin key. Also lists voter NAMES (never their picks).
 app.get('/api/results', limit, (req, res) => {
   if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
   const votes = load();
   res.json({
-    voters: votes.length,
-    people: votes.map((v) => ({ key: v.name, name: v.display || v.name, at: v.at })),  // names only, no picks
-    categories: categories.map((c) => ({
-      id: c.id, name: c.name,
-      nominees: c.nominees
-        .map((x) => ({ ...x, votes: votes.filter((v) => v.picks[c.id] === x.id).length }))
-        .sort((a, b) => b.votes - a.votes),
-    })),
+    voters: votes.length, revealed: revealed(),
+    people: votes.map((v) => ({ key: v.name, name: v.display || v.name, at: v.at })),
+    categories: tally(votes),
   });
+});
+
+// Public results: only returns data once the admin has revealed them.
+app.get('/api/public-results', (req, res) => {
+  if (!revealed()) return res.json({ revealed: false });
+  res.json({ revealed: true, categories: tally(load()) });
+});
+
+// Admin flips the public results page open or closed.
+app.post('/api/admin/reveal', limit, (req, res) => {
+  if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
+  fs.writeFileSync(SET, JSON.stringify({ revealed: !!(req.body && req.body.revealed) }));
+  res.json({ ok: true });
 });
 
 // Retake: delete ONE person's ballot so they can vote again (matched by name).

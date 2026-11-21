@@ -25,6 +25,10 @@ async function load() {
     const d = await call('/api/results');
     const out = $('out'); out.replaceChildren();
     out.append(el('p', `${d.voters} people have voted.`));
+    // Reveal switch for the public results page (/results.html)
+    const rv = el('button', d.revealed ? 'Hide results from everyone' : 'Show results to everyone', d.revealed ? 'ghost' : 'go');
+    rv.onclick = async () => { try { await call('/api/admin/reveal', { revealed: !d.revealed }); load(); } catch (e) { $('err').textContent = e.message; } };
+    out.append(el('p', d.revealed ? 'Results page is OPEN: everyone can see the winners at /results.html.' : 'Results page is LOCKED: voters see that results open on the night.'), rv);
 
     // Registered names: the admin sees WHO voted, never WHAT they picked
     out.append(el('h3', 'Registered voters'));

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Winners | The Boys' Choice Awards</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+.rc{margin:2rem 0;text-align:center}.rc>button{width:100%}
+.win{display:flex;flex-wrap:wrap;gap:1.4rem;justify-content:center;margin:1.2rem 0}
+.win figure{margin:0;width:min(230px,70vw)}.win .frame{filter:none;box-shadow:0 0 0 3px var(--gold),0 0 40px 10px rgba(255,214,120,.7)}
+.win img{display:block;width:100%;aspect-ratio:1;object-fit:cover;border:3px solid var(--ink)}
+.win figcaption b{display:block;font:700 1.6rem "Cormorant Garamond",serif;margin-top:.6rem}
+.row{display:flex;align-items:center;gap:.8rem;margin:.4rem 0;text-align:left}.row .n{flex:0 0 9rem}.t{flex:1;height:12px;border-radius:6px;background:rgba(232,207,154,.2)}.t i{display:block;height:100%;border-radius:6px;background:var(--gold)}.row b{width:2rem;text-align:right}
+</style></head>
+<body>
+<div class="curtain left" aria-hidden="true"></div><div class="curtain right" aria-hidden="true"></div>
+<main id="main"></main>
+<script>
+const main = document.getElementById('main');
+const el = (tag, text, cls) => { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; };
+let timer, shown = false;
+
+// While locked, ask the server every 15 seconds. The moment the admin reveals, the curtains open by themselves.
+async function check() {
+  const d = await fetch('/api/public-results').then((r) => r.json());
+  if (!d.revealed) {
+    const p = el('section', undefined, 'panel entry');
+    p.append(el('h1', "The winners"), el('p', "Results open at the ceremony on November 30. This page opens by itself when they are revealed."));
+    return main.replaceChildren(p);
+  }
+  if (shown) return; shown = true; clearInterval(timer);
+  document.body.classList.add('open'); setTimeout(() => render(d), 900);
+}
+
+function render(d) {
+  const all = el('button', 'Reveal all winners', 'go'); const buttons = [];
+  const box = el('div', undefined, 'top'); box.style.justifyContent = 'center'; box.append(all);
+  const list = el('div');
+  for (const c of d.categories) {
+    const top = c.nominees[0] ? c.nominees[0].votes : 0;
+    const winners = top > 0 ? c.nominees.filter((n) => n.votes === top) : [];   // ties show every winner
+    const sec = el('section', undefined, 'rc'); const body = el('div'); body.hidden = true;
+    const btn = el('button', `Reveal: ${c.name}`, 'go'); buttons.push(btn);
+    btn.onclick = () => { body.hidden = false; btn.hidden = true; };
+    body.append(el('h2', c.name));
+    if (!winners.length) body.append(el('p', 'No votes in this category.'));
+    else {
+      const w = el('div', undefined, 'win');
+      for (const n of winners) {
+        const f = el('figure'), fr = el('span', undefined, 'frame'), img = el('img');
+        img.src = n.photo; img.alt = n.name; fr.append(img);
+        const cap = el('figcaption'); cap.append(el('b', n.name), el('span', `${n.votes} ${n.votes === 1 ? 'vote' : 'votes'}`));
+        f.append(fr, cap); w.append(f);
+      }
+      body.append(el('p', winners.length > 1 ? 'It is a tie.' : 'The winner is'), w);
+      for (const n of c.nominees) {                                              // everyone's tally
+        const row = el('div', undefined, 'row'), bar = el('div', undefined, 't'), fill = el('i');
+        fill.style.width = (n.votes / top * 100) + '%'; bar.append(fill);
+        row.append(el('span', n.name, 'n'), bar, el('b', n.votes)); body.append(row);
+      }
+    }
+    sec.append(btn, body); list.append(sec);
+  }
+  all.onclick = () => buttons.forEach((b) => b.click());
+  const wrap = el('section'); wrap.append(el('h2', 'And the winners are'), box, list);
+  main.replaceChildren(wrap);
+}
+check(); timer = setInterval(check, 15000);
+</script></body></html>
