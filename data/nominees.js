@@ -38,7 +38,8 @@ const categories = [
   { id: 'financial', name: 'Financially Challenged',
     info: "The one whose pocket is permanently on break. Vote with love.", nominees: [
     n('evanss', 'Evanss', 'Monkey dey work, monkey still poor'), n('otems', 'Otems', 'Headboy wey nor get money'),
-    n('emmy', 'Emmy', 'Emma No Well'), n('hottest', 'Hottest', 'Opay') ] },
+    n('emmy', 'Emmy', 'Emma No Well'), n('hottest', 'Hottest', 'Opay'),
+    n('godswill', 'Omoaka Godswill', 'Share me sub') ] },
   { id: 'ghost', name: 'Group Chat Ghost',
     info: "Reads everything, replies to nothing. Who disappears from the group chat the most?", nominees: [
     n('hyacinth', 'Hyacinth', ''), n('courage', 'Courage', ''), n('joshua', 'Joshua', ''),
@@ -53,7 +54,8 @@ const categories = [
     info: "The best moving sticker of 2026. Vote for the one that makes you laugh every time.", nominees: [
     n('vsticker1', 'Video Sticker 1', '', true), n('vsticker2', 'Video Sticker 2', '', true),
     n('vsticker3', 'Video Sticker 3', '', true), n('vsticker4', 'Video Sticker 4', '', true),
-    n('vsticker5', 'Video Sticker 5', '', true) ] },
+    n('vsticker5', 'Video Sticker 5', '', true), n('vsticker6', 'Video Sticker 6', '', true),
+    n('vsticker7', 'Video Sticker 7', '', true) ] },
 ];
 // Hide categories that have no nominees yet so voters never see an empty screen
 module.exports = { categories: categories.filter((c) => c.nominees.length) };

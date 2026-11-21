@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Countdown | The Boys' Choice Awards</title>
+<meta name="description" content="Live countdown to The Boys' Choice Awards ceremony on November 30.">
+<meta property="og:title" content="The Boys' Choice Awards: live countdown">
+<meta property="og:description" content="See how long is left until the ceremony on November 30.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1a0305;--gold:#e8cf9a;--gold-d:#b98d45;--ivory:#f6ead0;--bulb:#fff3d6}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;color:var(--ivory);font:400 1rem/1.6 Lora,Georgia,serif;
+  /* velvet curtain stripes */
+  background:repeating-linear-gradient(90deg,#4a080c 0 16px,#7d0f16 16px 34px,#4a080c 34px 50px) fixed}
+/* dark edges and a warm spotlight in the middle */
+body::before{content:"";position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse at 50% 38%,rgba(255,150,120,.28) 0,rgba(0,0,0,0) 45%,rgba(10,1,2,.8) 100%)}
+main{position:relative;z-index:2;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2.5rem 1.1rem}
+.eyebrow{letter-spacing:.3em;font-size:.8rem;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+h1{font:700 clamp(2.5rem,10vw,5rem)/1.05 "Cormorant Garamond",Georgia,serif;color:var(--gold);margin:0;text-shadow:0 4px 30px rgba(0,0,0,.6)}
+.date{margin:.8rem 0 2.2rem;font-size:1.1rem}
+
+/* the clock: four boxes framed in marquee bulbs, like the ballot cards */
+.clock{display:grid;grid-template-columns:repeat(2,1fr);gap:1rem;width:100%;max-width:760px}
+@media(min-width:640px){.clock{grid-template-columns:repeat(4,1fr);gap:1.2rem}}
+.unit{padding:11px;border-radius:8px;
+  background:radial-gradient(circle,var(--bulb) 38%,#b3252b 42% 62%,transparent 66%) 0 0/15px 15px,var(--gold-d);
+  box-shadow:0 0 30px 4px rgba(255,200,110,.25)}
+.face{background:var(--ink);border:3px solid #0a0102;padding:1rem .4rem .8rem}
+.num{display:block;font:700 clamp(2.8rem,13vw,5rem)/1 "Cormorant Garamond",Georgia,serif;color:var(--gold);
+  font-variant-numeric:lining-nums tabular-nums}
+.lab{display:block;margin-top:.4rem;font-size:.75rem;letter-spacing:.25em;text-transform:uppercase;opacity:.85}
+.pop{animation:pop .4s ease-out}
+@keyframes pop{from{transform:scale(1.1)}to{transform:scale(1)}}
+
+.big{font:700 clamp(2.2rem,9vw,4rem)/1.1 "Cormorant Garamond",Georgia,serif;color:var(--gold);margin:.5rem 0 1rem}
+.tag{max-width:30rem;margin:2rem auto 1.4rem;font-style:italic;opacity:.9}
+.row{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap}
+.btn{display:inline-block;font:600 1rem Lora,serif;border-radius:999px;padding:.85rem 1.8rem;border:2px solid var(--gold);text-decoration:none;cursor:pointer}
+.go{background:var(--gold);color:var(--ink)}.ghost{background:transparent;color:var(--gold)}
+.btn:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* twinkling sparkles in the background */
+.star{position:fixed;z-index:1;width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 12px 4px rgba(255,255,255,.7);
+  pointer-events:none;animation:tw 3s ease-in-out infinite}
+@keyframes tw{0%,100%{opacity:.15;transform:scale(.6)}50%{opacity:1;transform:scale(1.2)}}
+@media(prefers-reduced-motion:reduce){.pop,.star{animation:none}.star{opacity:.5}}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">The Boys' Group</p>
+  <h1>The Boys' Choice Awards</h1>
+  <p class="date">Awarding ceremony, November 30</p>
+
+  <!-- Shown while the countdown is running -->
+  <div id="clock" class="clock" role="timer" aria-label="Time left until the ceremony">
+    <div class="unit"><div class="face"><span class="num" id="d">0</span><span class="lab" id="dl">Days</span></div></div>
+    <div class="unit"><div class="face"><span class="num" id="h">00</span><span class="lab">Hours</span></div></div>
+    <div class="unit"><div class="face"><span class="num" id="m">00</span><span class="lab">Minutes</span></div></div>
+    <div class="unit"><div class="face"><span class="num" id="s">00</span><span class="lab">Seconds</span></div></div>
+  </div>
+
+  <!-- Shown once the time has passed -->
+  <div id="now" hidden>
+    <p class="big">It is showtime!</p>
+    <p>The ceremony is on. The winners are waiting.</p>
+  </div>
+
+  <p class="tag" id="tag">Winners are revealed on the night. Have you voted yet?</p>
+  <div class="row">
+    <a class="btn go" id="cta" href="/">Go and vote</a>
+    <button class="btn ghost" id="share" type="button" hidden>Share this countdown</button>
+  </div>
+  <p class="sr" id="sr" role="status" aria-live="off"></p>
+</main>
+
+<script>
+// THE ONE LINE TO CHANGE: when the ceremony starts. +01:00 means Nigerian time.
+// Example for 6:30 pm: '2026-11-30T18:30:00+01:00'
+const EVENT = new Date('2026-11-30T00:00:00+01:00');
+
+const $ = (id) => document.getElementById(id);
+const pad = (n) => String(n).padStart(2, '0');
+let last = {};                                    // remembers the old numbers so only changed boxes "pop"
+
+function set(id, text) {
+  const el = $(id);
+  if (last[id] === text) return;                  // nothing changed, do nothing
+  last[id] = text; el.textContent = text;         // textContent only, no HTML
+  el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');   // restart the little pop animation
+}
+
+function tick() {
+  const ms = EVENT - Date.now();                  // always computed from the real clock, so it never drifts
+  if (ms <= 0) {                                  // the time has come
+    $('clock').hidden = true; $('now').hidden = false;
+    $('tag').textContent = 'Thank you for being part of this year.';
+    const cta = $('cta'); cta.textContent = 'See the winners'; cta.href = '/results.html';
+    $('sr').textContent = 'The ceremony has started.';
+    return false;                                 // false = stop the timer
+  }
+  const d = Math.floor(ms / 864e5), h = Math.floor(ms / 36e5) % 24, m = Math.floor(ms / 6e4) % 60, s = Math.floor(ms / 1e3) % 60;
+  set('d', String(d)); set('h', pad(h)); set('m', pad(m)); set('s', pad(s));
+  $('dl').textContent = d === 1 ? 'Day' : 'Days';
+  const msg = `${d} days, ${h} hours and ${m} minutes to the ceremony.`;
+  if (last.sr !== msg) { last.sr = msg; $('sr').textContent = msg; }   // screen readers get an update once a minute
+  return true;
+}
+
+tick();
+const timer = setInterval(() => { if (!tick()) clearInterval(timer); }, 1000);
+document.addEventListener('visibilitychange', tick);   // catch up straight away when the phone wakes up
+
+// "Share this countdown" shows only on phones that have a share sheet
+if (navigator.share) {
+  $('share').hidden = false;
+  $('share').addEventListener('click', () =>
+    navigator.share({ title: "The Boys' Choice Awards", text: 'Countdown to the ceremony on November 30', url: location.href }).catch(() => {}));
+}
+
+// Sparkles: 16 dots at random spots
+for (let i = 0; i < 16; i++) {
+  const st = document.createElement('i'); st.className = 'star';
+  st.style.left = Math.random() * 100 + 'vw'; st.style.top = Math.random() * 100 + 'vh';
+  st.style.animationDelay = (Math.random() * 3).toFixed(2) + 's';
+  document.body.append(st);
+}
+</script>
+</body>
+</html>
