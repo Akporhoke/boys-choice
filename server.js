@@ -179,6 +179,59 @@ app.post('/api/admin/opens', limit, (req, res) => {
   res.json({ ok: true });
 });
 
+// ---- NEW: The Boys Quiz. Exactly 6 questions, set by the admin, stored in data/quiz.json ----
+// Each slot: { q: "question", options: [4 strings, blank = unused], answer: index 0-3 of the correct option }.
+const QZ = path.join(__dirname, 'data', 'quiz.json');
+const blankQ = () => ({ q: '', options: ['', '', '', ''], answer: 0 });
+const loadQuiz = () => {
+  try { const a = JSON.parse(fs.readFileSync(QZ, 'utf8')); if (Array.isArray(a)) return Array.from({ length: 6 }, (_, i) => ({ ...blankQ(), ...a[i] })); } catch {}
+  return Array.from({ length: 6 }, blankQ);             // nothing saved yet = 6 empty slots
+};
+// A question is usable when it has text, at least 2 filled options, and the marked correct option is filled.
+const qValid = (x) => !!x.q && x.options.filter(Boolean).length >= 2 && !!x.options[x.answer];
+const quizReady = (qz) => qz.every(qValid);              // the quiz only goes live when all 6 are usable
+
+// Public: the questions WITHOUT the answers. If the quiz is not ready, voters just see "coming soon".
+app.get('/api/quiz', (req, res) => {
+  const qz = loadQuiz();
+  if (!quizReady(qz)) return res.json({ ready: false });
+  res.json({ ready: true, questions: qz.map((x) => ({ q: x.q, options: x.options.map((t, i) => ({ i, t })).filter((o) => o.t) })) });
+});
+
+// Public: marking happens here, so the right answers never reach the browser until the voter has finished.
+app.post('/api/quiz/check', limit, (req, res) => {
+  const qz = loadQuiz();
+  if (!quizReady(qz)) return res.status(409).json({ error: 'The quiz is not ready yet.' });
+  const given = Array.isArray(req.body && req.body.answers) ? req.body.answers : [];
+  const correct = qz.map((x) => x.answer);
+  res.json({ score: correct.filter((c, i) => given[i] === c).length, total: 6, correct });
+});
+
+// Admin: read the 6 slots (including the right answers)...
+app.get('/api/admin/quiz', limit, (req, res) => {
+  if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
+  const qz = loadQuiz();
+  res.json({ questions: qz, ready: quizReady(qz) });
+});
+
+// ...and save them. A slot may be left fully empty (the quiz just stays hidden), but a slot with anything in it must be complete.
+app.post('/api/admin/quiz', limit, (req, res) => {
+  if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
+  const raw = req.body && req.body.questions;
+  if (!Array.isArray(raw) || raw.length !== 6) return res.status(400).json({ error: 'Send exactly 6 questions.' });
+  const clean = raw.map((x) => ({
+    q: String((x && x.q) || '').trim().slice(0, 200),
+    options: Array.from({ length: 4 }, (_, i) => String((x && x.options && x.options[i]) || '').trim().slice(0, 100)),
+    answer: Number.isInteger(x && x.answer) && x.answer >= 0 && x.answer < 4 ? x.answer : 0,
+  }));
+  for (const [i, x] of clean.entries()) {
+    if ((x.q || x.options.some(Boolean)) && !qValid(x))
+      return res.status(400).json({ error: `Question ${i + 1} needs the question, at least 2 options, and a correct answer that is filled in.` });
+  }
+  fs.writeFileSync(QZ, JSON.stringify(clean, null, 2));
+  res.json({ ok: true, ready: quizReady(clean) });
+});
+
 // ---- Feedback: star ratings plus an optional note, stored without names ----
 const FB = path.join(__dirname, 'data', 'feedback.json');
 const loadFb = () => { try { return JSON.parse(fs.readFileSync(FB, 'utf8')); } catch { return []; } };

@@ -225,14 +225,19 @@ async function done(msg) {
   const count = h('p', { class: 'voters' }), ballotBox = h('div'), momentsBox = h('div'), cardBox = h('div');   // cardBox: NEW, holds the share card
   const ballotBtn = h('button', { class: 'ghost', type: 'button' }, 'View my ballot');
   const momentsBtn = h('button', { class: 'go', type: 'button', hidden: '' }, 'Relive the memories of 2026');   // shown once we know clips exist
+  const quizBtn = h('button', { class: 'go', type: 'button', hidden: '' }, 'Take The Boys Quiz');               // NEW: shown once the admin has filled in all 6 questions
+  quizBtn.addEventListener('click', () => { location.href = '/quiz.html'; });
   const wrap = h('section', { class: 'done' }, h('h2', {}, 'Thank you'), h('p', {}, msg),
     h('p', { class: 'quip' }, QUIPS[Math.floor(Math.random() * QUIPS.length)]), count,
     // CHANGED: the buttons now come right after the voter count, so "Relive the memories" is seen without scrolling.
     // The two boxes stay directly under the buttons, so the ballot or the gallery opens right where the voter tapped.
-    h('div', { class: 'btnrow' }, momentsBtn, ballotBtn), ballotBox, momentsBox,
+    h('div', { class: 'btnrow' }, momentsBtn, quizBtn, ballotBtn), ballotBox, momentsBox,
     cardBox,                                                              // share card
     makeRater('process', 'How was the nomination and voting process?'));   // feedback (from rate.js), now at the bottom
   show(wrap);
+
+  // NEW: show the quiz button only when the admin has saved all 6 questions (otherwise it stays hidden). Errors are ignored.
+  api('/api/quiz').then((d) => { if (d.ready) quizBtn.hidden = false; }).catch(() => {});
 
   // NEW: screenshot-friendly "I voted" card. It shows only HOW MANY categories were voted in, never who, so the ballot stays secret.
   // The count comes from the server (this device's own ballot), so it is also right when someone comes back later.

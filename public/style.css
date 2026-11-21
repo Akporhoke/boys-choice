@@ -85,6 +85,15 @@ h2{font-size:clamp(2rem,7vw,3rem);color:var(--gold);text-align:center;margin-bot
   background:rgba(20,3,5,.96);color:var(--ivory);text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.6)}
 .toast[hidden]{display:none}
 .soonline{color:var(--gold);font-style:italic}
+/* NEW: The Boys Quiz (public/quiz.html). Answer buttons are full width and over 48px tall, so they are easy to tap. */
+.q-q{font-size:clamp(1.5rem,6vw,2.2rem);line-height:1.2;margin:0 0 1.4rem}
+.q-opts{display:grid;gap:.8rem;max-width:520px;margin:0 auto}
+.q-opt{min-height:3.2rem;padding:.8rem 1.2rem;border-radius:14px;border:2px solid var(--gold-d);background:rgba(20,3,5,.88);color:var(--ivory);font:inherit;text-align:left;cursor:pointer}
+.q-opt[aria-pressed=true]{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold),0 0 24px 4px rgba(255,214,120,.5)}
+.q-score{font-size:clamp(2.2rem,9vw,3.4rem)}
+.q-rev{text-align:left;padding:.8rem 0;border-bottom:1px solid rgba(232,207,154,.25)}
+.q-rev p{margin:.15rem 0}.q-rev .q-rq{font:700 1.2rem/1.2 "Cormorant Garamond",serif;color:var(--gold)}
+.q-rev .good{color:#b9e8be}.q-rev .bad{color:#ffb4a8}
 /* NEW: the "I voted" share card on the thank-you screen (made to look good in a screenshot) */
 .votecard{max-width:340px;margin:1.6rem auto .6rem;padding:1.4rem 1.2rem;border-radius:16px;border:2px solid var(--gold);
   background:radial-gradient(ellipse at 50% 0%,#8c1118 0,#4a080c 60%,var(--ink) 100%);

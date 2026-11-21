@@ -3,7 +3,9 @@
 <title>Admin</title><link rel="stylesheet" href="style.css">
 <style>.row{display:flex;align-items:center;gap:.8rem;margin:.5rem 0}.row span.n{flex:0 0 9.5rem}.t{flex:1;height:14px;border-radius:7px;background:rgba(232,207,154,.2)}.t i{display:block;height:100%;border-radius:7px;background:var(--gold)}.row b{width:2.5rem;text-align:right}
 .who{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.5rem 0;border-bottom:1px solid rgba(232,207,154,.25)}.who button{padding:.4rem 1rem}
-.danger{border-color:#ff8a7a;color:#ffb4a8}h3{margin-top:1.8rem;color:var(--gold)}</style>
+.danger{border-color:#ff8a7a;color:#ffb4a8}h3{margin-top:1.8rem;color:var(--gold)}
+/* quiz editor: a round "correct answer" tick next to each option box (the global input rule would stretch it, so it is reset here) */
+.qrow{display:flex;align-items:center;gap:.6rem;margin:.4rem 0}.qrow input[type=radio]{flex:0 0 auto;width:1.4rem;height:1.4rem;padding:0;accent-color:#e8cf9a}</style>
 </head><body><main>
 <section class="panel"><h1 style="color:var(--gold)">Admin</h1>
 <label for="k">Admin key</label><input id="k" type="password" autocomplete="off">
@@ -62,6 +64,38 @@ async function load() {
     const rvState = el('p', d.revealed ? 'Results page is OPEN: everyone can see the winners at /results.html.' : 'Results page is LOCKED: voters see that results open on the night.');
     rvState.style.marginTop = '1.4rem';
     out.append(rvState, rv);
+
+    // NEW: The Boys Quiz editor. 6 questions, up to 4 options each, one correct answer ticked per question.
+    const qd = await call('/api/admin/quiz');
+    out.append(el('h3', 'The Boys Quiz'));
+    out.append(el('p', 'Set the 6 questions. Tick the circle next to the correct answer. Leave an option empty to use fewer than 4 (at least 2 needed). The quiz goes live for voters when all 6 are filled in.'));
+    const qBlocks = [];
+    qd.questions.forEach((x, n) => {
+      const box = el('div'); box.style.margin = '1.2rem 0';
+      const lab = el('label', `Question ${n + 1}`), qi = el('input');
+      qi.id = 'quizq' + n; lab.htmlFor = qi.id; qi.maxLength = 200; qi.value = x.q; qi.placeholder = 'Type the question';
+      box.append(lab, qi);
+      const opts = [];
+      for (let i = 0; i < 4; i++) {
+        const row = el('div', undefined, 'qrow');
+        const rad = el('input'); rad.type = 'radio'; rad.name = 'quizans' + n; rad.checked = x.answer === i;
+        rad.setAttribute('aria-label', `Option ${i + 1} is the correct answer for question ${n + 1}`);
+        const t = el('input'); t.maxLength = 100; t.value = x.options[i] || ''; t.placeholder = `Option ${i + 1}`;
+        t.setAttribute('aria-label', `Question ${n + 1}, option ${i + 1}`);
+        row.append(rad, t); box.append(row); opts.push({ rad, t });
+      }
+      qBlocks.push({ qi, opts }); out.append(box);
+    });
+    const saveQ = el('button', 'Save quiz', 'go'), qMsg = el('p'); qMsg.setAttribute('role', 'status');
+    saveQ.onclick = async () => {
+      qMsg.className = ''; qMsg.textContent = '';
+      const questions = qBlocks.map((b) => ({ q: b.qi.value, options: b.opts.map((o) => o.t.value), answer: Math.max(0, b.opts.findIndex((o) => o.rad.checked)) }));
+      try {
+        const r = await call('/api/admin/quiz', { questions });
+        qMsg.textContent = r.ready ? 'Saved. The quiz is live.' : 'Saved, but not live yet: all 6 questions must be filled in.';
+      } catch (e) { qMsg.className = 'err'; qMsg.textContent = e.message; }   // shown right here, next to the button
+    };
+    out.append(saveQ, qMsg);
 
     // Registered names: the admin sees WHO voted, never WHAT they picked
     out.append(el('h3', 'Registered voters'));
