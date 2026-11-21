@@ -30,7 +30,7 @@ async function start() {
       if (ballot.needsCode) await api('/api/enter', { code: code.value });
       state.name = name.value.trim(); state.code = code.value;
       document.body.classList.add('open');            // curtains slide open
-      setTimeout(category, 900);                      // first category appears as they part
+      setTimeout(category, 350);                      // first category appears as they part
     } catch (e) { err.textContent = e.message; btn.disabled = false; }
   });
   show(h('section', { class: 'panel entry' },
@@ -43,12 +43,20 @@ async function start() {
 
 function category() {
   const c = state.cats[state.i], last = state.i === state.cats.length - 1;
+  const next = state.cats[state.i + 1];
+  if (next) next.nominees.forEach((n) => { new Image().src = n.photo; });
   const cards = c.nominees.map((n) => {
     const card = h('button', { class: 'card', type: 'button', 'aria-pressed': state.picks[c.id] === n.id },
       h('span', { class: 'frame' }, h('img', { src: n.photo, alt: n.name })),
       h('span', { class: 'nm' }, n.name), h('span', { class: 'tg' }, n.tag));
-    card.addEventListener('click', () => {            // tap again to un-pick
-      state.picks[c.id] = state.picks[c.id] === n.id ? undefined : n.id; category();
+    card.addEventListener('click', () => {
+      const picking = state.picks[c.id] !== n.id;       // tap the same nominee again to un-pick
+      state.picks[c.id] = picking ? n.id : undefined;
+      category();                                       // show the glow right away
+      if (picking) {                                    // then move on by itself (one tap per category)
+        const at = state.i;
+        setTimeout(() => { if (state.i === at && state.picks[c.id]) last ? review() : (state.i++, category()); }, 350);
+      }
     });
     return card;
   });
@@ -56,7 +64,7 @@ function category() {
     h('div', { class: 'top' }, h('span', {}, `Category ${state.i + 1} of ${state.cats.length}`), h('span', {}, state.name)),
     h('div', { class: 'bar' }, h('i', { style: `width:${((state.i + 1) / state.cats.length) * 100}%` })),
     h('h2', {}, c.name),
-    h('p', { class: 'hint' }, 'Tap a nominee to pick. Tap again to undo.'),
+    h('p', { class: 'hint' }, 'Tap a nominee and it moves on by itself. Use Skip to leave one blank.'),
     h('div', { class: 'grid' + (c.nominees.length < 4 ? ' few' : '') }, cards),
     h('div', { class: 'nav' },
       h('button', { class: 'ghost', type: 'button', onclick: () => { state.i ? (state.i--, category()) : null; } }, 'Back'),
@@ -91,10 +99,14 @@ async function done(msg) {
   try {                                               // then load the clips; if none exist, show nothing extra
     const list = await api('/api/moments');
     if (!list.length) return;
-    wrap.append(h('h2', { class: 'mh' }, 'Funny 2026 moments'),
-      h('div', { class: 'moments' }, list.map((m) => h('figure', { class: 'moment' },
-        h('span', { class: 'frame' }, h('video', { src: m.src, controls: '', playsinline: '', preload: 'metadata' })),
-        h('figcaption', {}, m.title)))));
+    const open = h('button', { class: 'go', type: 'button', style: 'margin-top:2.5rem' }, `Watch funny 2026 moments (${list.length})`);
+    open.addEventListener('click', () => {
+      open.replaceWith(h('div', {}, h('h2', { class: 'mh' }, 'Funny 2026 moments'),
+        h('div', { class: 'moments' }, list.map((m) => h('figure', { class: 'moment' },
+          h('span', { class: 'frame' }, h('video', { src: m.src, controls: '', playsinline: '', preload: 'none' })),
+          h('figcaption', {}, m.title))))));
+    });
+    wrap.append(open);
   } catch { /* clips are a bonus: ignore errors */ }
 }
 

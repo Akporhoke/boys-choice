@@ -12,7 +12,10 @@ const DB = path.join(__dirname, 'data', 'votes.json');    // all votes live in t
 
 const app = express();
 app.use(express.json({ limit: '10kb' }));                 // read JSON bodies, reject huge ones
-app.use(express.static(path.join(__dirname, 'public')));  // serve the frontend
+// Serve the frontend. Photos and videos are cached by the phone for a day, so repeat visits are instant.
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, p) => { if (/[\\/](img|videos)[\\/]/.test(p)) res.setHeader('Cache-Control', 'public, max-age=86400'); },
+}));
 
 // Read/write the votes file. Writing to a temp file then renaming avoids a half-written file.
 const load = () => { try { return JSON.parse(fs.readFileSync(DB, 'utf8')); } catch { return []; } };
