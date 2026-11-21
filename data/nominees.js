@@ -10,9 +10,8 @@ const categories = [
   { id: 'comedy', name: 'Comedy Excellence Award', nominees: [
     n('eboh', 'Eboh Something', 'Ololoooo'), n('ogor', 'Ogor', 'Edo Batman'),
     n('agba', 'Agba-Baller', 'Hottest, Hotspot, Girls Dem Daddy'), n('ekpekpe', 'Ekpekpe Evans', 'Group Clown') ] },
-  { id: 'digital', name: 'Digital Presence', nominees: [
-    n('emmy', 'Emmy', 'Emma No Well'), n('hottest', 'Hottest', 'Opay'),
-    n('evanss', 'Evanss', 'Monkey dey work, monkey still poor'), n('otems', 'Otems', 'Headboy wey nor get money') ] },
+  // Digital Presence: add nominees here when known. Categories with no nominees are hidden automatically.
+  { id: 'digital', name: 'Digital Presence', nominees: [] },
   { id: 'intellectual', name: 'Intellectual Excellence Award', nominees: [
     n('oteme', 'Oteme Fejiro', 'Medical Fact Series') ] },
   { id: 'redflag', name: 'Certified Red Flags', nominees: [
@@ -22,8 +21,11 @@ const categories = [
     n('umuero', 'Umuero', 'Dark Shadow'), n('evans', 'Evans', 'Find babe for me'),
     n('emmy', 'Emmy', 'Emma No Well'), n('tejiri', 'Gay Tejiri', 'Find babe for me') ] },
   { id: 'support', name: 'Outstanding Support', nominees: [
-    n('agba', 'Agba-Baller', 'Hottest, Hotspot, Girls Dem Daddy'), n('obor', 'Obor Israel', 'Giver') ] },
-  { id: 'financial', name: 'Financially Challenged', nominees: [
+    n('agba', 'Agba-Baller', 'Hottest, Hotspot, Girls Dem Daddy'), n('obor', 'Obor Israel', 'Giver'),
     n('ugboka', 'Ugboka Bill', 'Wetin we dey think tho'), n('ofa', 'Ofa Marvel', 'O.M.O') ] },
+  { id: 'financial', name: 'Financially Challenged', nominees: [
+    n('evanss', 'Evanss', 'Monkey dey work, monkey still poor'), n('otems', 'Otems', 'Headboy wey nor get money'),
+    n('emmy', 'Emmy', 'Emma No Well'), n('hottest', 'Hottest', 'Opay') ] },
 ];
-module.exports = { categories };
+// Hide categories that have no nominees yet so voters never see an empty screen
+module.exports = { categories: categories.filter((c) => c.nominees.length) };
