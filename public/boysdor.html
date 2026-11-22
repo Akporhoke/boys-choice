@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BOYS D'OR</title>
+<meta name="description" content="Something is coming. 2027.">
+<meta property="og:title" content="BOYS D'OR">
+<meta property="og:description" content="Something is coming. 2027.">
+<meta property="og:image" content="https://boys-choice.onrender.com/img/boysdor-wide.png">
+<meta name="theme-color" content="#040302">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,400&family=Jost:wght@200;300;400&display=swap" rel="stylesheet">
+<style>
+:root{--gold:#e8cf9a;--gold-d:#b98d45;--ink:#040302}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--ink);color:var(--gold);overflow:hidden}
+body{font:300 1rem/1.6 Jost,system-ui,sans-serif}
+canvas#dust{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
+/* a slow breathing spotlight behind everything */
+.spot{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity 3s;
+  background:radial-gradient(ellipse 70% 48% at 50% 40%,rgba(232,207,154,.2),rgba(232,207,154,0) 70%)}
+body.on .spot{opacity:1;animation:breathe 7s ease-in-out infinite}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.12);opacity:1}}
+.vig{position:fixed;inset:0;z-index:2;pointer-events:none;background:radial-gradient(ellipse at 50% 45%,transparent 40%,rgba(0,0,0,.85) 100%)}
+
+/* 1. the gate: you have to choose to enter (the tap also lets the sound start) */
+#gate{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.6rem;
+  background:var(--ink);border:0;color:var(--gold);cursor:pointer;font:200 .85rem Jost,sans-serif;letter-spacing:.6em;text-transform:uppercase;transition:opacity 1.2s}
+#gate i{width:10px;height:10px;border-radius:50%;background:var(--gold);box-shadow:0 0 24px 8px rgba(232,207,154,.6);animation:beat 1.6s ease-in-out infinite}
+@keyframes beat{0%,100%{transform:scale(.6);opacity:.5}50%{transform:scale(1.3);opacity:1}}
+#gate.gone{opacity:0;pointer-events:none}
+
+/* 2. the speech, one line at a time */
+#speech{position:fixed;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;padding:2rem;text-align:center;pointer-events:none}
+#line{max-width:17ch;font:italic 400 clamp(1.9rem,8vw,3.3rem)/1.25 "Cormorant Garamond",Georgia,serif;opacity:0;transform:translateY(14px);filter:blur(6px);
+  transition:opacity 1s,transform 1s,filter 1s;text-shadow:0 0 30px rgba(232,207,154,.35)}
+#line.in{opacity:1;transform:none;filter:none}
+
+/* 3. the reveal */
+#reveal{position:fixed;inset:0;z-index:6;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:1.5rem;overflow-y:auto}
+#reveal.show{display:flex}
+.mark{width:clamp(90px,26vw,140px);color:var(--gold);filter:drop-shadow(0 0 18px rgba(232,207,154,.55));margin-bottom:1.2rem}
+.mark path,.mark circle{stroke-dasharray:1;stroke-dashoffset:1;animation:draw 2.6s ease-out .2s forwards}
+.mark circle{animation-delay:1.8s}
+@keyframes draw{to{stroke-dashoffset:0}}
+.word{margin:0;font:200 clamp(2.3rem,11.5vw,5.2rem)/1 Jost,sans-serif;letter-spacing:.18em;padding-left:.18em;text-shadow:0 0 40px rgba(232,207,154,.5);
+  opacity:0;animation:word 2.4s ease-out 1s forwards}
+@keyframes word{from{opacity:0;letter-spacing:.7em;filter:blur(8px)}to{opacity:1;letter-spacing:.18em;filter:none}}
+.year{margin:1.2rem 0 1.6rem;font:300 .85rem Jost,sans-serif;letter-spacing:.7em;padding-left:.7em;opacity:0;animation:fade 1.5s ease-out 3s forwards}
+.cls{list-style:none;margin:0 0 1.8rem;padding:0;font:300 .8rem Jost,sans-serif;letter-spacing:.35em;text-transform:uppercase}
+.cls li{margin:.45rem 0;opacity:0;animation:fade 1.2s ease-out forwards}
+.cls li:nth-child(1){animation-delay:3.8s}.cls li:nth-child(2){animation-delay:4.4s}.cls li:nth-child(3){animation-delay:5s}
+.cls b{font-weight:300;opacity:.55}
+.acts{display:flex;gap:.9rem;justify-content:center;flex-wrap:wrap;opacity:0;animation:fade 1.5s ease-out 5.8s forwards}
+@keyframes fade{to{opacity:1}}
+.btn{font:300 .8rem Jost,sans-serif;letter-spacing:.3em;text-transform:uppercase;color:var(--gold);background:transparent;border:1px solid var(--gold-d);padding:.9rem 1.4rem;border-radius:999px;cursor:pointer;text-decoration:none}
+.btn:hover,.btn:focus-visible{background:rgba(232,207,154,.12);outline:none;border-color:var(--gold)}
+.btn[hidden]{display:none}
+
+.tools{position:fixed;top:0;left:0;right:0;z-index:30;display:flex;justify-content:space-between;padding:max(.8rem,env(safe-area-inset-top)) 1rem 0}
+.tools button{background:none;border:0;color:var(--gold);opacity:.55;font:300 .7rem Jost,sans-serif;letter-spacing:.3em;text-transform:uppercase;cursor:pointer;padding:.5rem}
+.tools button:hover,.tools button:focus-visible{opacity:1;outline:none}
+#toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);z-index:40;background:#14100a;border:1px solid var(--gold-d);padding:.6rem 1.2rem;border-radius:999px;font-size:.8rem;letter-spacing:.15em}
+#toast[hidden]{display:none}
+@media(prefers-reduced-motion:reduce){
+  .spot{animation:none!important}.mark path,.mark circle{animation:none;stroke-dashoffset:0}
+  .word,.year,.cls li,.acts{animation:none;opacity:1}#gate i{animation:none}
+}
+</style>
+</head>
+<body>
+<div class="spot"></div><canvas id="dust"></canvas><div class="vig"></div>
+
+<div class="tools"><button id="skip" type="button" hidden>Skip</button><button id="snd" type="button" hidden>Sound: on</button></div>
+
+<button id="gate" type="button" aria-label="Enter"><i></i><span>Tap to enter</span></button>
+<div id="speech" aria-live="polite"><p id="line"></p></div>
+
+<main id="reveal">
+  <!-- An original crown mark drawn in thin gold lines (pathLength=1 lets the CSS draw it stroke by stroke) -->
+  <svg class="mark" viewBox="0 0 120 92" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+    <path pathLength="1" d="M14 70 L8 24 L38 47 L60 12 L82 47 L112 24 L106 70 Z"/>
+    <path pathLength="1" d="M14 78 H106"/><path pathLength="1" d="M20 86 H100"/>
+    <circle pathLength="1" cx="8" cy="19" r="4"/><circle pathLength="1" cx="60" cy="7" r="4"/><circle pathLength="1" cx="112" cy="19" r="4"/>
+  </svg>
+  <h1 class="word">BOYS D'OR</h1>
+  <p class="year">Coming 2027</p>
+  <ul class="cls"><li>Nominees <b>sealed</b></li><li>Date <b>classified</b></li><li>Location <b>classified</b></li></ul>
+  <div class="acts">
+    <button class="btn" id="share" type="button">Share the secret</button>
+    <a class="btn" href="/results.html">Back to the results</a>
+    <button class="btn" id="again" type="button">Replay</button>
+  </div>
+</main>
+<p id="toast" role="status" hidden></p>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ---- THE SPEECH. Change the words here. d = how long each line stays (milliseconds). ----
+const SPEECH = [
+  { t: 'They said the boys would never do it again.', d: 4200 },
+  { t: 'We did.', d: 2600 },
+  { t: '2026 was the warm-up.', d: 3400 },
+  { t: 'Next year, this group chat stops for one night.', d: 4400 },
+  { t: 'One stage. One trophy. One name.', d: 4000 },
+  { t: 'And nobody will see it coming.', d: 4000 },
+];
+
+// ---- SOUND: a small film score played live by the browser (no audio files to download). ----
+// The pieces: a dark pad that grows with the speech, a heartbeat that speeds up, a whoosh and a glass ping on every line,
+// a riser that builds during the last line, a sudden drop, then a huge impact with a choir chord, bells and sparkles.
+let sound = true, ac, master, curBus = null;
+function audio() {                                   // starts only after the first tap, which phones require
+  ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+  if (ac.state === 'suspended') ac.resume();
+  if (!master) { master = ac.createGain(); master.gain.value = sound ? 1 : 0; master.connect(ac.destination); }
+  return ac;
+}
+const noiseCache = new WeakMap(), irCache = new WeakMap();
+function noiseBuf(c) {                               // 4 seconds of white noise, made once and reused
+  let b = noiseCache.get(c);
+  if (!b) { b = c.createBuffer(1, c.sampleRate * 4, c.sampleRate); const d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; noiseCache.set(c, b); }
+  return b;
+}
+const noiseSrc = (c) => { const s = c.createBufferSource(); s.buffer = noiseBuf(c); s.loop = true; return s; };
+function impulse(c) {                                // a made-up concert hall: noise that fades away over 3.4 seconds = the echo
+  let b = irCache.get(c);
+  if (!b) { const len = Math.floor(c.sampleRate * 3.4); b = c.createBuffer(2, len, c.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); }
+    irCache.set(c, b); }
+  return b;
+}
+// One "bus" per playthrough: every sound goes in at bus.input; it gets echo, is kept from clipping, then goes out at bus.out.
+function makeBus(c, dest) {
+  const input = c.createGain(), comp = c.createDynamicsCompressor(), out = c.createGain();
+  comp.threshold.value = -16; comp.ratio.value = 4; comp.attack.value = 0.008; comp.release.value = 0.3;
+  const conv = c.createConvolver(), send = c.createGain(), wet = c.createGain();
+  conv.buffer = impulse(c); send.gain.value = 0.34; wet.gain.value = 0.9;
+  input.connect(comp); input.connect(send); send.connect(conv); conv.connect(wet); wet.connect(comp);
+  const lim = c.createDynamicsCompressor();            // a final safety limiter so the big hit never distorts on a phone speaker
+  lim.threshold.value = -4; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.002; lim.release.value = 0.15;
+  out.gain.value = 0.8; comp.connect(lim); lim.connect(out); out.connect(dest);
+  return { input, out };
+}
+function killBus(b) {                                // quick fade-out, used by Skip and Replay
+  if (!b || !ac) return;
+  b.out.gain.setTargetAtTime(0, ac.currentTime, 0.06);
+  setTimeout(() => { try { b.out.disconnect(); } catch {} }, 900);
+}
+
+// ---- building blocks ----
+function adsr(g, t, a, peak, hold, r) {              // volume shape: quick rise to peak, hold, then fade out
+  g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.setValueAtTime(peak, t + a + hold);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + a + hold + r);
+}
+function osc(c, type, f, t, dur, dest, o = {}) {     // one oscillator, optionally gliding to o.to
+  const x = c.createOscillator(); x.type = type; x.frequency.setValueAtTime(f, t);
+  if (o.to) x.frequency.exponentialRampToValueAtTime(o.to, t + (o.over || dur));
+  if (o.detune) x.detune.value = o.detune;
+  x.connect(dest); x.start(t); x.stop(t + dur + 0.1); return x;
+}
+function whoosh(c, dest, t, dur, from, to, vol) {    // noise sweeping up in pitch = a rush of air
+  const n = noiseSrc(c), f = c.createBiquadFilter(), g = c.createGain();
+  f.type = 'bandpass'; f.Q.value = 1.1; f.frequency.setValueAtTime(from, t); f.frequency.exponentialRampToValueAtTime(to, t + dur);
+  adsr(g, t, dur * 0.45, vol, 0, dur * 0.55);
+  n.connect(f); f.connect(g); g.connect(dest); n.start(t, Math.random() * 2); n.stop(t + dur + 0.1);
+}
+function bell(c, dest, t, f, vol, ring) {            // a struck glass bell: one tone shaking another (FM) plus a quiet overtone
+  const car = c.createOscillator(), mod = c.createOscillator(), mg = c.createGain(), g = c.createGain(), h2 = c.createOscillator(), hg = c.createGain();
+  car.frequency.value = f; mod.frequency.value = f * 3.5;
+  mg.gain.setValueAtTime(f * 2.4, t); mg.gain.exponentialRampToValueAtTime(1, t + 1.3);   // the shimmer fades like a real bell
+  mod.connect(mg); mg.connect(car.frequency);
+  h2.frequency.value = f * 2.01; hg.gain.value = 0.25; h2.connect(hg); car.connect(g); hg.connect(g);
+  adsr(g, t, 0.004, vol, 0, ring); g.connect(dest);
+  [car, mod, h2].forEach((o) => { o.start(t); o.stop(t + ring + 0.1); });
+}
+function thump(c, dest, t, vol) {                    // one soft heartbeat knock
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(78, t); o.frequency.exponentialRampToValueAtTime(36, t + 0.2);
+  adsr(g, t, 0.006, vol, 0, 0.22); o.connect(g); g.connect(dest); o.start(t); o.stop(t + 0.3);
+}
+const heartbeat = (c, dest, t, vol) => { thump(c, dest, t, vol); thump(c, dest, t + 0.21, vol * 0.65); };   // lub-dub
+function tick(c, dest, t, vol) {                     // a tiny click, used in the riser
+  const n = noiseSrc(c), f = c.createBiquadFilter(), g = c.createGain();
+  f.type = 'bandpass'; f.frequency.value = 3200; f.Q.value = 3; adsr(g, t, 0.002, vol, 0, 0.07);
+  n.connect(f); f.connect(g); g.connect(dest); n.start(t, Math.random() * 2); n.stop(t + 0.12);
+}
+function pad(c, dest, t, dur, notes, vol, cuts, fade) {   // a dark held chord; cuts = [[seconds, brightness Hz]...] opens it up over time
+  const f = c.createBiquadFilter(), g = c.createGain(), lfo = c.createOscillator(), lg = c.createGain();
+  f.type = 'lowpass'; f.Q.value = 0.8; f.frequency.setValueAtTime(cuts[0][1], t + cuts[0][0]);
+  cuts.slice(1).forEach(([dt, hz]) => f.frequency.exponentialRampToValueAtTime(hz, t + dt));
+  lfo.frequency.value = 0.11; lg.gain.value = 140; lfo.connect(lg); lg.connect(f.frequency); lfo.start(t); lfo.stop(t + dur + 0.1);   // slow breathing
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 5); g.gain.setValueAtTime(vol, t + dur - fade); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  notes.forEach((n) => [-7, 7].forEach((d) => osc(c, 'sawtooth', n, t, dur, f, { detune: d })));   // two slightly detuned saws per note = thick
+  f.connect(g); g.connect(dest);
+}
+function choir(c, dest, t, dur, notes, vol) {        // an "ahh" chord: saw waves through two vowel filters, with a little vibrato
+  const g = c.createGain(), f1 = c.createBiquadFilter(), f2 = c.createBiquadFilter(), mix = c.createGain();
+  f1.type = f2.type = 'bandpass'; f1.frequency.value = 800; f1.Q.value = 5; f2.frequency.value = 1250; f2.Q.value = 6;
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 2.6); g.gain.setValueAtTime(vol, t + dur - 3); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  notes.forEach((n, i) => {
+    const o = osc(c, 'sawtooth', n, t, dur, mix, { detune: i % 2 ? 5 : -5 });
+    const l = c.createOscillator(), lg = c.createGain(); l.frequency.value = 5.2 + i * 0.3; lg.gain.value = 9; l.connect(lg); lg.connect(o.detune); l.start(t); l.stop(t + dur + 0.1);
+  });
+  mix.connect(f1); mix.connect(f2); f1.connect(g); f2.connect(g); g.connect(dest);
+}
+function riser(c, dest, t, dur) {                    // tension: rushing noise + a climbing tone + faster and faster clicks, cut dead just before the hit
+  const n = noiseSrc(c), f = c.createBiquadFilter(), g = c.createGain();
+  f.type = 'bandpass'; f.Q.value = 0.9; f.frequency.setValueAtTime(250, t); f.frequency.exponentialRampToValueAtTime(7000, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.2, t + dur - 0.2); g.gain.linearRampToValueAtTime(0.0001, t + dur - 0.05);
+  n.connect(f); f.connect(g); g.connect(dest); n.start(t, 1); n.stop(t + dur + 0.1);
+  const lp = c.createBiquadFilter(), tg = c.createGain(); lp.type = 'lowpass'; lp.frequency.value = 2500;
+  osc(c, 'sawtooth', 90, t, dur, lp, { to: 1400, over: dur });
+  tg.gain.setValueAtTime(0.0001, t); tg.gain.exponentialRampToValueAtTime(0.09, t + dur - 0.25); tg.gain.linearRampToValueAtTime(0.0001, t + dur - 0.05);
+  lp.connect(tg); tg.connect(dest);
+  let x = t, gap = 0.55; while (x < t + dur - 0.3) { tick(c, dest, x, 0.12 + 0.5 * ((x - t) / dur)); x += gap; gap = Math.max(0.05, gap * 0.86); }
+}
+function impact(c, dest, t) {                        // the big hit: deep boom + body + thud + metal crash
+  const g1 = c.createGain(); adsr(g1, t, 0.004, 0.75, 0.05, 2.6); osc(c, 'sine', 150, t, 2.8, g1, { to: 30, over: 2.2 }); g1.connect(dest);
+  const g2 = c.createGain(); adsr(g2, t, 0.004, 0.4, 0, 1.4); osc(c, 'triangle', 95, t, 1.6, g2, { to: 48, over: 1.2 }); g2.connect(dest);
+  const n = noiseSrc(c), lp = c.createBiquadFilter(), ng = c.createGain();
+  lp.type = 'lowpass'; lp.frequency.setValueAtTime(1600, t); lp.frequency.exponentialRampToValueAtTime(180, t + 0.7);
+  adsr(ng, t, 0.003, 0.5, 0, 0.8); n.connect(lp); lp.connect(ng); ng.connect(dest); n.start(t, 2); n.stop(t + 1);
+  const n2 = noiseSrc(c), hp = c.createBiquadFilter(), cg = c.createGain();
+  hp.type = 'highpass'; hp.frequency.value = 3500; adsr(cg, t, 0.005, 0.26, 0, 3.2); n2.connect(hp); hp.connect(cg); cg.connect(dest); n2.start(t, 1); n2.stop(t + 3.4);
+}
+
+// ---- the score, in two parts so Skip can jump straight to part 2 ----
+// Part 1 plays under the speech and returns the moment of the hit. It uses the same timings as the speech below.
+function scoreIntro(c, dest, t0) {
+  const starts = []; let x = t0 + 1.5;
+  for (const s of SPEECH) { starts.push(x); x += s.d / 1000; }
+  const tHit = x + 0.9, riserAt = starts[starts.length - 1];     // the riser builds during the last line
+  whoosh(c, dest, t0, 1.8, 150, 1100, 0.16);                      // the entrance
+  const sub = c.createGain(); adsr(sub, t0, 3, 0.1, tHit - t0 - 3.2, 0.1); osc(c, 'sine', 36.7, t0, tHit - t0, sub); sub.connect(dest);   // low D underneath
+  pad(c, dest, t0, tHit - t0 - 0.05, [73.42, 110, 146.83, 174.61], 0.03, [[0, 320], [riserAt - t0, 1700], [tHit - t0, 3200]], 0.12);  // D minor, slowly brightening
+  let hb = t0 + 2.2, gap = 1.7, vol = 0.22;                         // heartbeat gets faster and louder
+  while (hb < riserAt) { heartbeat(c, dest, hb, vol); hb += gap; gap = Math.max(0.75, gap * 0.93); vol = Math.min(0.5, vol + 0.012); }
+  const pings = [587.33, 698.46, 880, 659.25, 783.99, 523.25];     // eerie notes, one per line
+  starts.forEach((s, i) => { whoosh(c, dest, s - 0.15, 1.1, 350, 2600, 0.09); if (i < starts.length - 1) bell(c, dest, s + 0.15, pings[i], 0.04, 4); });
+  riser(c, dest, riserAt, tHit - riserAt);
+  return tHit;
+}
+// Part 2: the hit and everything after it: boom, a bright D major choir chord, a bell run, then drifting sparkles.
+function scoreReveal(c, dest, t) {
+  impact(c, dest, t);
+  choir(c, dest, t + 0.1, 11, [146.83, 220, 293.66, 369.99, 440], 0.5);
+  [587.33, 739.99, 880, 1174.66, 1479.98, 880, 1174.66].forEach((f, i) => bell(c, dest, t + 0.25 + i * 0.17, f, 0.13, 4.2));
+  const sparkle = [1174.66, 1318.51, 1479.98, 1760, 1975.53, 2349.32];
+  let x = t + 1.8; while (x < t + 10) { bell(c, dest, x, sparkle[Math.random() * sparkle.length | 0], 0.035 + Math.random() * 0.03, 2.2); x += 0.22 + Math.random() * 0.5; }
+  const low = c.createGain(); adsr(low, t + 0.2, 2.5, 0.18, 5, 4); osc(c, 'sine', 73.42, t + 0.2, 12, low); low.connect(dest);
+}
+$('snd').onclick = () => { sound = !sound; $('snd').textContent = 'Sound: ' + (sound ? 'on' : 'off'); if (master) master.gain.setTargetAtTime(sound ? 1 : 0, ac.currentTime, 0.05); };
+
+// ---- The timeline ----
+let skip = false, run = 0;                            // run = which playthrough is active, so Replay cancels the old one
+const sleep = (ms) => new Promise((r) => setTimeout(r, skip ? 0 : ms));
+async function play() {
+  const me = ++run; skip = false;
+  if (curBus) { killBus(curBus); curBus = null; }
+  $('reveal').classList.remove('show'); $('gate').classList.add('gone'); document.body.classList.add('on');
+  $('skip').hidden = false; $('snd').hidden = false;
+  let c = null, bus = null;
+  try { c = audio(); } catch {}
+  if (c && !reduce) {                                 // the WHOLE score is scheduled now, on the audio clock, so it never drifts
+    bus = curBus = makeBus(c, master); scoreReveal(c, bus.input, scoreIntro(c, bus.input, c.currentTime + 0.05));
+  }
+  const line = $('line');
+  if (!reduce) {
+    await sleep(1500);
+    for (const s of SPEECH) {
+      if (skip || me !== run) break;
+      line.textContent = s.t; line.classList.add('in');
+      await sleep(s.d - 1000); line.classList.remove('in'); await sleep(1000);
+    }
+    if (me !== run) return;
+    await sleep(900);                                 // a beat of silence before the hit
+  }
+  line.classList.remove('in'); $('skip').hidden = true;
+  if (c && (skip || reduce)) {                        // skipped (or reduced motion): drop the first half and play just the big moment
+    killBus(bus); bus = curBus = makeBus(c, master); scoreReveal(c, bus.input, c.currentTime + 0.12);
+  }
+  $('reveal').classList.remove('show'); void $('reveal').offsetWidth; $('reveal').classList.add('show');   // restarts the CSS animations
+}
+$('gate').onclick = play;
+$('skip').onclick = () => { skip = true; };
+$('again').onclick = () => { skip = false; play(); };
+
+// ---- Share ----
+function toast(m) { const t = $('toast'); t.textContent = m; t.hidden = false; setTimeout(() => { t.hidden = true; }, 2600); }
+$('share').onclick = async () => {
+  const data = { title: "BOYS D'OR", text: "Something is coming. Boys d'Or. 2027.", url: location.href };
+  try { if (navigator.share) await navigator.share(data); else { await navigator.clipboard.writeText(location.href); toast('Link copied'); } } catch {}
+};
+
+// ---- Gold dust drifting upwards ----
+(function dust() {
+  const cv = $('dust'), g = cv.getContext('2d'); let W, H;
+  const size = () => { W = cv.width = innerWidth; H = cv.height = innerHeight; }; size(); addEventListener('resize', size);
+  const bits = Array.from({ length: 70 }, () => ({ x: Math.random() * innerWidth, y: Math.random() * innerHeight, r: Math.random() * 1.6 + .4, v: Math.random() * .35 + .1, p: Math.random() * 6 }));
+  (function step() {
+    g.clearRect(0, 0, W, H);
+    for (const b of bits) {
+      b.y -= b.v; b.p += .02; if (b.y < -4) { b.y = H + 4; b.x = Math.random() * W; }
+      g.globalAlpha = (Math.sin(b.p) + 1) / 2 * .6 + .1; g.fillStyle = '#e8cf9a'; g.beginPath(); g.arc(b.x, b.y, b.r, 0, 7); g.fill();
+    }
+    if (!reduce) requestAnimationFrame(step);
+  })();
+})();
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The Winners | The Boys' Choice Awards</title>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,400&family=Jost:wght@300&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <style>
 .rc{margin:2rem 0;text-align:center}.rc>button{width:100%}
@@ -10,8 +10,14 @@
 .win img{display:block;width:100%;aspect-ratio:1;object-fit:cover;border:3px solid var(--ink)}
 .win figcaption b{display:block;font:700 1.6rem "Cormorant Garamond",serif;margin-top:.6rem}
 .row{display:flex;align-items:center;gap:.8rem;margin:.4rem 0;text-align:left}.row .n{flex:0 0 9rem}.t{flex:1;height:12px;border-radius:6px;background:rgba(232,207,154,.2)}.t i{display:block;height:100%;border-radius:6px;background:var(--gold)}.row b{width:2rem;text-align:right}
-/* NEW: the small award description line under each category heading */
-.cat-info{margin:.3rem auto 1rem;max-width:32rem;font-size:.95rem;font-style:italic;opacity:.85}
+/* Next event teaser button: dark and gold, with a slow glow so people tap it */
+.nx{margin:4rem 0 1rem;text-align:center;border-top:1px solid rgba(232,207,154,.25);padding-top:2.5rem}
+.nxq{font:italic 400 1.5rem "Cormorant Garamond",Georgia,serif;color:var(--gold);margin:.2rem 0 1.4rem}
+.next{display:inline-block;font:300 .85rem Jost,Lora,sans-serif;letter-spacing:.35em;text-transform:uppercase;text-decoration:none;color:var(--gold);
+  background:#040302;border:1px solid var(--gold);padding:1rem 2rem;border-radius:999px;animation:nxglow 3s ease-in-out infinite}
+.next:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+@keyframes nxglow{0%,100%{box-shadow:0 0 0 rgba(232,207,154,0)}50%{box-shadow:0 0 28px 6px rgba(232,207,154,.45)}}
+@media(prefers-reduced-motion:reduce){.next{animation:none}}
 </style></head>
 <body>
 <div class="curtain left" aria-hidden="true"></div><div class="curtain right" aria-hidden="true"></div>
@@ -31,12 +37,7 @@ async function check() {
     return main.replaceChildren(p);
   }
   if (shown) return; shown = true; clearInterval(timer);
-  // NEW step 1: the public results data has no award descriptions, so read them from /api/ballot
-  // (public data, no server change) and match them to categories by id.
-  // If this request fails, the page simply shows no info lines.
-  const infos = await fetch('/api/ballot').then((r) => r.json())
-    .then((b) => Object.fromEntries(b.categories.map((c) => [c.id, c.info]))).catch(() => ({}));
-  render(d, infos); document.body.classList.add('reveal', 'open');   // curtains part in front of the winners page
+  render(d); document.body.classList.add('reveal', 'open');   // curtains part in front of the winners page
 }
 
 // ---- Drumroll: built from noise bursts in the browser, so no sound file is needed ----
@@ -89,7 +90,7 @@ function celebrate(show) {
   setTimeout(() => { show(); confetti(); busy = false; }, secs * 1000);
 }
 
-function render(d, infos = {}) {                          // CHANGED: takes the id -> info map from check()
+function render(d) {
   const all = el('button', 'Reveal all winners', 'go'), snd = el('button', 'Sound: on', 'ghost'), opens = [];
   snd.onclick = () => { sound = !sound; snd.textContent = 'Sound: ' + (sound ? 'on' : 'off'); };
   const box = el('div', undefined, 'top'); box.style.cssText = 'justify-content:center;gap:1rem;flex-wrap:wrap'; box.append(all, snd);
@@ -102,8 +103,6 @@ function render(d, infos = {}) {                          // CHANGED: takes the 
     const open = () => { body.hidden = false; btn.hidden = true; }; opens.push(open);
     btn.onclick = () => { btn.textContent = 'Drumroll...'; celebrate(open); };
     body.append(el('h2', c.name));
-    // NEW step 2: the award description under the heading (el() uses textContent, so it is safe). Skipped if there is none.
-    if (infos[c.id]) body.append(el('p', infos[c.id], 'cat-info'));
     if (!winners.length) body.append(el('p', 'No votes in this category.'));
     else {
       const w = el('div', undefined, 'win');
@@ -123,7 +122,10 @@ function render(d, infos = {}) {                          // CHANGED: takes the 
     sec.append(btn, body); list.append(sec);
   }
   all.onclick = () => { all.textContent = 'Drumroll...'; celebrate(() => { opens.forEach((f) => f()); all.hidden = true; }); };
-  const wrap = el('section'); wrap.append(el('h2', 'And the winners are'), box, list, makeRater('ceremony', 'How was the award ceremony?'));
+  const wrap = el('section'); // NEW: the teaser for next year's event. Shown at the very bottom, after the winners and the rating box.
+  const nx = el('section', undefined, 'nx'), nxLink = el('a', 'Next event', 'next'); nxLink.href = '/boysdor.html';
+  nx.append(el('p', 'That was 2026.'), el('p', 'The night is over. Or is it?', 'nxq'), nxLink);
+  wrap.append(el('h2', 'And the winners are'), box, list, makeRater('ceremony', 'How was the award ceremony?'), nx);
   main.replaceChildren(wrap);
 }
 check(); timer = setInterval(check, 15000);
