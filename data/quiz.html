@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Boys Quiz | The Boys' Choice Awards</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main id="main"></main>
+<script>
+// Tiny element builder like the one in app.js: text goes in with textContent, so quiz text can never inject HTML.
+const el = (tag, text, cls) => { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; };
+const main = document.getElementById('main');
+const show = (...nodes) => { main.replaceChildren(...nodes); window.scrollTo(0, 0); };
+const api = (url, body) => fetch(url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {})
+  .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || 'Something went wrong. Try again.'); return d; });
+const home = () => { const b = el('button', 'Back to the awards', 'ghost'); b.type = 'button'; b.onclick = () => { location.href = '/'; }; return b; };
+
+// state.qs = the 6 questions the server picked for THIS round (each has an id, the text and options WITHOUT answers).
+// state.answers[n] = the option number the voter chose for question n.
+const state = { qs: [], i: 0, answers: [] };
+
+// CHANGED: asks the server for a fresh random set of 6 questions. Returns false when the quiz is not ready yet.
+async function fetchSet() {
+  const d = await api('/api/quiz');
+  if (!d.ready) return false;
+  state.qs = d.questions; state.i = 0; state.answers = [];
+  return true;
+}
+
+// Step 1: the intro screen. If the admin has fewer than 6 questions saved, show "coming soon".
+async function start() {
+  if (!(await fetchSet())) {
+    const p = el('section', undefined, 'panel entry');
+    p.append(el('h1', 'The Boys Quiz'), el('p', 'The quiz is coming soon. Check back later.'), home());
+    return show(p);
+  }
+  const go = el('button', 'Start the quiz', 'go'); go.type = 'button';
+  go.onclick = question;                                // this round's questions are already loaded
+  const p = el('section', undefined, 'panel entry');
+  p.append(el('h1', 'The Boys Quiz'), el('p', `${state.qs.length} questions picked at random. Find out who really knows the boys.`), go);
+  show(p);
+}
+
+// Step 2: one question per screen. Tapping an answer picks it and moves on by itself, like the voting screens.
+function question() {
+  const q = state.qs[state.i];
+  let taken = false;                                    // ignore extra taps while moving on
+  const opts = el('div', undefined, 'q-opts');
+  q.options.forEach((o) => {
+    const b = el('button', o.t, 'q-opt'); b.type = 'button'; b.setAttribute('aria-pressed', 'false');
+    b.onclick = () => {
+      if (taken) return; taken = true;
+      state.answers[state.i] = o.i;                     // o.i = the option's number on the server
+      b.setAttribute('aria-pressed', 'true');           // show the glow
+      setTimeout(() => { state.i + 1 < state.qs.length ? (state.i++, question()) : finish(); }, 350);
+    };
+    opts.append(b);
+  });
+  const top = el('div', undefined, 'top'); top.append(el('span', `Question ${state.i + 1} of ${state.qs.length}`));
+  const bar = el('div', undefined, 'bar'), fill = el('i'); fill.style.width = `${((state.i + 1) / state.qs.length) * 100}%`; bar.append(fill);
+  const sec = el('section'); sec.append(top, bar, el('h2', q.q, 'q-q'), opts);
+  show(sec);
+}
+
+// Step 3: the server marks the answers (it is the only one that knows them) and sends back the score and the right options.
+async function finish() {
+  try {
+    // CHANGED: the ids tell the server WHICH 6 questions were asked this round, answers[n] goes with ids[n].
+    const r = await api('/api/quiz/check', { ids: state.qs.map((q) => q.id), answers: state.answers, token: localStorage.getItem('bc_token') || '' });
+    const say = r.score === r.total ? 'Perfect score. You are the group chat source of truth.'
+      : r.score >= 4 ? 'Strong. You really do pay attention.'
+      : r.score >= 2 ? 'Not bad, but some of the boys are still strangers to you.'
+      : 'Are you even in this group chat?';
+    const text = (n, idx) => { const o = state.qs[n].options.find((x) => x.i === idx); return o ? o.t : 'No answer'; };
+    const review = el('div');
+    state.qs.forEach((q, n) => {
+      const right = state.answers[n] === r.correct[n], row = el('div', undefined, 'q-rev');
+      row.append(el('p', q.q, 'q-rq'), el('p', `${right ? '✓' : '✗'} Your answer: ${text(n, state.answers[n])}`, right ? 'good' : 'bad'));
+      if (!right) row.append(el('p', `Correct answer: ${text(n, r.correct[n])}`));
+      review.append(row);
+    });
+    // CHANGED: "Play again" asks the server for a NEW random set of 6, so every round is different.
+    const again = el('button', 'Play again', 'ghost'); again.type = 'button';
+    again.onclick = async () => {
+      again.disabled = true;
+      try { (await fetchSet()) ? question() : start(); } catch (e) { again.disabled = false; show(el('p', e.message, 'err')); }
+    };
+    const btns = el('div', undefined, 'btnrow'); btns.append(again, home());
+    const p = el('section', undefined, 'panel'); p.style.textAlign = 'center';
+    p.append(el('h2', `You got ${r.score} of ${r.total}`, 'q-score'), el('p', say, 'quip'), review, btns);
+    show(p);
+  } catch (e) {                                         // network problem: let them try sending again
+    const retry = el('button', 'Try again', 'go'); retry.type = 'button'; retry.onclick = finish;
+    const p = el('section', undefined, 'panel entry');
+    p.append(el('p', e.message, 'err'), retry); show(p);
+  }
+}
+
+start().catch((e) => show(el('p', e.message, 'err')));
+</script></body></html>

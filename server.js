@@ -57,13 +57,13 @@ const adminOk = (req) => {
   return !!ADMIN_KEY && a.length === b.length && crypto.timingSafeEqual(a, b);
 };
 
-// Tiny rate limit: max 20 requests per minute per IP on the voting routes.
+// Tiny rate limit: max 120 requests per minute per IP on the voting routes (a whole room on one Wi-Fi shares one address).
 const hits = new Map();
 const limit = (req, res, next) => {
   const now = Date.now();
   const recent = (hits.get(req.ip) || []).filter((t) => now - t < 60000);
   recent.push(now); hits.set(req.ip, recent);
-  if (recent.length > 20) return res.status(429).json({ error: 'Too many attempts. Wait a minute and try again.' });
+  if (recent.length > 120) return res.status(429).json({ error: 'Too many attempts. Wait a minute and try again.' });
   next();
 };
 
@@ -151,6 +151,10 @@ const tally = (votes) => categories.map((c) => ({
     .map((x) => ({ ...x, votes: votes.filter((v) => v.picks[c.id] === x.id).length }))
     .sort((a, b) => b.votes - a.votes),
 }));
+
+// NEW: the LIVE CEREMONY (big screen, phones, host panel). All of it lives in show-routes.js.
+const show = require('./show-routes')(app, { adminOk, load, categories, tally, saveSettings, limit,
+  dataDir: path.join(__dirname, 'data'), publicDir: path.join(__dirname, 'public') });
 
 // Admin results: needs the admin key. Also lists voter NAMES (never their picks).
 app.get('/api/results', limit, (req, res) => {
@@ -241,8 +245,9 @@ app.post('/api/quiz/check', limit, (req, res) => {
   const byId = new Map(loadQuiz().map((x) => [x.id, x]));
   const picked = ids.map((id) => byId.get(String(id)));
   if (picked.some((x) => !x)) return res.status(400).json({ error: 'The quiz was just updated. Start it again.' });
-  const correct = picked.map((x) => x.answer);
-  res.json({ score: picked.filter((x, k) => answers[k] === x.answer).length, total: QNEED, correct });
+  const correct = picked.map((x) => x.answer), score = picked.filter((x, k) => answers[k] === x.answer).length;
+  if (req.body.token) show.quizScore(String(req.body.token), score, QNEED);   // NEW: feeds the quiz leaderboard in the live show (only checked-in guests count)
+  res.json({ score, total: QNEED, correct });
 });
 
 // Admin: read the whole pool (including the right answers) for the editor.

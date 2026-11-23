@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Host panel</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="show.css">
+<style>
+main{max-width:640px;margin:0 auto;padding:1rem}
+.panel{margin:1rem 0}.panel h3{margin-bottom:.6rem}
+.big{width:100%;font-size:1.6rem;padding:1.2rem}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin:.6rem 0}
+.stat{display:flex;gap:.5rem;flex-wrap:wrap}.stat span{padding:.3rem .8rem;border:1px solid var(--gold-d);border-radius:999px;font-size:.85rem}
+.now{font:700 1.5rem "Cormorant Garamond",serif;color:var(--gold)}
+label{display:block;font-weight:600;margin:.7rem 0 .2rem}
+textarea{min-height:6rem}
+.danger{border-color:#ff8a7a;color:#ffb4a8}
+</style></head>
+<body><main>
+  <section class="panel"><h1>Host panel</h1>
+    <label for="k">Admin key</label><input id="k" type="password" autocomplete="off">
+    <p><button class="btn" id="open" type="button" style="margin-top:.8rem">Open the controls</button></p><p class="err" id="err" role="alert"></p>
+  </section>
+  <div id="ctl" hidden>
+    <section class="panel">
+      <div class="stat" id="stat"></div>
+      <p style="margin:.8rem 0 .2rem">On screen now:</p><div class="now" id="now"></div>
+      <p style="margin:.2rem 0 .8rem;opacity:.8" id="up"></p>
+      <button class="btn big" id="next" type="button">NEXT</button>
+      <div class="two"><button class="btn ghost" id="back" type="button">Back</button><button class="btn ghost" id="start" type="button">Start the show</button></div>
+      <label for="jump">Jump to a step</label><select id="jump"></select>
+      <div class="two"><button class="btn ghost" id="go" type="button">Go to it</button><button class="btn ghost" id="pre" type="button">Back to red carpet</button></div>
+      <p style="font-size:.85rem;opacity:.8">Tip: on a computer, the right arrow or space bar also means NEXT.</p>
+      <p><a href="/stage.html" target="_blank" style="color:var(--gold)">Open the big screen</a> | <a href="/show.html" target="_blank" style="color:var(--gold)">Open the phone view</a></p>
+    </section>
+    <section class="panel"><h3>Roast lines</h3><p style="font-size:.9rem">One line under each winner. Leave empty to use a random gentle one.</p><div id="roasts"></div>
+      <h3 style="margin-top:1.2rem">Sponsor breaks</h3><p style="font-size:.9rem">One fake ad per line.</p><textarea id="ads"></textarea>
+      <label for="cp">Caption battle photo</label><select id="cp"></select>
+      <p><button class="btn" id="save" type="button" style="margin-top:.8rem">Save settings</button> <span id="saved"></span></p>
+    </section>
+    <section class="panel"><h3>Danger zone</h3><p style="font-size:.9rem">Clears check-ins, predictions, reactions and bingo. It does not touch votes.</p>
+      <button class="btn ghost danger" id="reset" type="button">Reset the show data</button></section>
+  </div>
+</main>
+<script src="showcore.js"></script>
+<script>
+let key = '', info = null, busy = false, timer = null;
+const call = (body) => api('/api/show/admin', body, key);
+const say = (m, ok) => { const e = $('err'); e.textContent = m || ''; e.style.color = ok ? 'var(--gold)' : ''; };
+
+function paint(i) {
+  info = i;
+  $('stat').replaceChildren(...[`Phase: ${i.phase}`, `${i.guests} checked in`, `${i.predictions} predictions`, `${i.reactions} reactions`, `${i.screens} screens connected`].map((t) => el('span', t)));
+  $('now').textContent = i.phase === 'pre' ? 'Red carpet (show not started)' : i.steps[i.idx];
+  $('up').textContent = i.phase === 'pre' ? 'Press "Start the show" when everyone is ready. Voting closes automatically.' : (i.steps[i.idx + 1] ? 'Next: ' + i.steps[i.idx + 1] : 'That was the last step.');
+  $('next').textContent = i.phase === 'pre' ? 'Press Start the show' : (i.steps[i.idx + 1] ? 'NEXT: ' + i.steps[i.idx + 1] : 'The end'); $('next').disabled = i.phase === 'pre' || !i.steps[i.idx + 1];
+  if (!$('jump').options.length) i.steps.forEach((s, n) => $('jump').append(new Option(`${n + 1}. ${s}`, n)));
+  $('jump').value = i.idx;
+}
+async function refresh() { try { paint(await api('/api/show/admin', null, key)); } catch (e) { say(e.message); } }
+async function act(body) {                           // one action at a time, so a double tap cannot skip a step
+  if (busy) return; busy = true; setTimeout(() => { busy = false; }, 350);
+  try { await call(body); say(''); await refresh(); } catch (e) { say(e.message); }
+}
+
+function fillSettings(i) {
+  const r = $('roasts'); r.replaceChildren();
+  i.people.forEach((p, n) => { const l = el('label', p.name), inp = el('input'); inp.id = 'r_' + p.id; inp.dataset.id = p.id; inp.maxLength = 140; inp.value = i.roasts[p.id] || ''; inp.placeholder = i.defaultRoasts[n % i.defaultRoasts.length]; l.htmlFor = inp.id; r.append(l, inp); });
+  $('ads').value = i.ads.join('\n');
+  const cp = $('cp'); cp.replaceChildren(new Option('First moments photo (automatic)', '')); i.images.forEach((u, n) => cp.append(new Option(`Photo ${n + 1}`, u))); cp.value = i.captionPhoto || '';
+}
+
+$('open').onclick = async () => {
+  key = $('k').value; say('');
+  try { const i = await api('/api/show/admin', null, key); $('ctl').hidden = false; paint(i); fillSettings(i); clearInterval(timer); timer = setInterval(refresh, 4000); } catch (e) { say(e.message); }
+};
+$('next').onclick = () => act({ action: 'next' });
+$('back').onclick = () => act({ action: 'back' });
+$('start').onclick = () => { if (!info || info.phase === 'pre' || confirm('Start again from the beginning?')) act({ action: 'start' }); };
+$('go').onclick = () => act({ action: 'goto', index: Number($('jump').value) });
+$('pre').onclick = () => { if (confirm('Go back to the red carpet? Screens will show the guest wall again.')) act({ action: 'pre' }); };
+$('reset').onclick = () => { if (confirm('Reset all show data (check-ins, predictions, reactions, bingo)? Votes are not touched.')) act({ action: 'reset' }); };
+$('save').onclick = async () => {
+  const roasts = {}; document.querySelectorAll('#roasts input').forEach((i) => { if (i.value.trim()) roasts[i.dataset.id] = i.value; });
+  try { await call({ action: 'config', roasts, ads: $('ads').value.split('\n'), captionPhoto: $('cp').value }); $('saved').textContent = 'Saved.'; setTimeout(() => { $('saved').textContent = ''; }, 2500); } catch (e) { say(e.message); }
+};
+document.addEventListener('keydown', (e) => { if ($('ctl').hidden || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return; if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); $('next').click(); } else if (e.key === 'ArrowLeft') $('back').click(); });
+</script></body></html>

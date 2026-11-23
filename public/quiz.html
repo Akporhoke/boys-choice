@@ -66,7 +66,7 @@ function question() {
 async function finish() {
   try {
     // CHANGED: the ids tell the server WHICH 6 questions were asked this round, answers[n] goes with ids[n].
-    const r = await api('/api/quiz/check', { ids: state.qs.map((q) => q.id), answers: state.answers });
+    const r = await api('/api/quiz/check', { ids: state.qs.map((q) => q.id), answers: state.answers, token: localStorage.getItem('bc_token') || '' });
     const say = r.score === r.total ? 'Perfect score. You are the group chat source of truth.'
       : r.score >= 4 ? 'Strong. You really do pay attention.'
       : r.score >= 2 ? 'Not bad, but some of the boys are still strangers to you.'

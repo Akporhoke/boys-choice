@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Boys' Choice Awards: Live</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,400&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="show.css">
+<style>
+html{font-size:clamp(15px,2.1vw,30px)}               /* everything scales up on a big screen */
+body{overflow-x:hidden}
+main{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem 1rem 4rem}
+#app{width:100%}
+/* A TV cannot scroll, so everything is sized to fit the screen height */
+body.stage .grid{display:flex;flex-wrap:wrap;justify-content:center;gap:1.2vh;margin-top:1.5vh}
+body.stage .grid figure{width:calc(min(var(--s, 24vh), 88vw / var(--c, 4)))}
+body.stage .grid figcaption{font-size:max(.8rem,2.4vh)}
+body.stage .winrow figure{width:min(26vh,70vw)}main{padding:1rem 1rem 3rem}
+body.stage .bar{display:none}                        /* the vote bars are on the phones; the TV keeps it clean */
+body.stage .step{padding:0}body.stage .step h1{font-size:min(9vh,6vw)}body.stage .step h2{font-size:min(7vh,5vw)}
+body.stage .slide{height:56vh}
+.hud{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.5rem 1.2rem;background:rgba(0,0,0,.55);font-size:.8rem;z-index:20}
+.hud b{color:var(--gold)}
+.dot{display:inline-block;width:.7em;height:.7em;border-radius:50%;background:#777;margin-right:.4em}.dot.on{background:#5be37d}
+#gate{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5rem;background:var(--ink);text-align:center;padding:2rem}
+#gate[hidden]{display:none}
+.tools{position:fixed;top:.6rem;right:.8rem;z-index:30;display:flex;gap:.5rem}.tools button{padding:.4rem .9rem;font-size:.7rem}
+#float{position:fixed;inset:0;pointer-events:none;z-index:40;overflow:hidden}
+.fl{position:absolute;bottom:-3rem;font-size:2.4rem;animation:rise 4.2s ease-out forwards}
+@keyframes rise{0%{transform:translateY(0) scale(.6);opacity:0}10%{opacity:1}100%{transform:translateY(-105vh) scale(1.3);opacity:0}}
+#bingo{position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:60;padding:1.2rem 2.5rem;border:3px solid var(--gold);border-radius:20px;background:rgba(10,2,3,.95);font:700 2.6rem "Cormorant Garamond",serif;color:var(--gold);text-align:center;box-shadow:0 0 60px rgba(232,207,154,.6)}
+#bingo[hidden]{display:none}
+</style></head>
+<body class="stage">
+<div id="gate"><h1 style="font-size:3rem">The Big Screen</h1><p>Open this on the TV or projector. Tap once to turn the sound on.</p><button class="btn" id="go" type="button">Start the big screen</button></div>
+<div class="tools"><button class="btn ghost" id="snd" type="button">Sound: on</button><button class="btn ghost" id="fs" type="button">Fullscreen</button></div>
+<main><div id="app"></div></main>
+<div id="float" aria-hidden="true"></div><div id="bingo" hidden role="status"></div>
+<div class="hud"><span><span class="dot" id="dot"></span><span id="status">connecting</span></span><span id="join"></span><span><b id="step"></b></span></div>
+<script src="sfx.js"></script><script src="showcore.js"></script>
+<script>
+$('join').textContent = 'Join on your phone: ' + location.host + '/show.html';
+let cur = null, sig = '', prevIdx = -1, prevPhase = '';
+
+// Sounds for each kind of step (only on the big screen, so a room full of phones stays quiet)
+const hooks = { onTick: () => SFX.tick(), onTimeUp: () => SFX.playoff() };
+function sounds(S) {
+  const T = S.step.type, fresh = S.idx !== prevIdx || S.phase !== prevPhase;
+  if (!fresh) return;
+  SFX.stopRoll();
+  if (S.phase === 'pre') return;
+  if (T === 'open') { SFX.welcome(); }
+  else if (T === 'intro') SFX.whoosh();
+  else if (T === 'envelope') SFX.drumroll(8);
+  else if (T === 'winner') { SFX.winner(); confetti(); }
+  else if (T === 'ad') SFX.jingle();
+  else if (['captionwin', 'oracle', 'hype'].includes(T)) { SFX.jingle(); confetti(); }
+  else if (T === 'end') { SFX.winner(); confetti(); }
+}
+function draw(S) {
+  const next = S.phase + '|' + S.idx + '|' + JSON.stringify(S.step) + (S.phase === 'pre' ? '|' + S.guests : '');
+  if (next === sig) return;                           // nothing visible changed (for example another guest checked in mid-show), so don't restart the screen
+  sig = next;
+  if (cur) cur._stops.forEach((f) => f());
+  sounds(S);
+  prevIdx = S.idx; prevPhase = S.phase;
+  cur = renderStep(S, 'stage', hooks);
+  $('app').replaceChildren(cur);
+  $('step').textContent = S.phase === 'pre' ? 'Red carpet' : `${S.idx + 1} / ${S.total}`;
+}
+
+// Reactions float up the screen; BINGO shows a banner
+function onEvent(kind, data) {
+  if (kind === 'react') {
+    Object.entries(data).forEach(([emoji, n]) => { for (let i = 0; i < Math.min(n, 12); i++) { const s = el('span', emoji, 'fl'); s.style.left = (5 + Math.random() * 90) + '%'; s.style.animationDelay = (Math.random() * 0.4) + 's'; $('float').append(s); setTimeout(() => s.remove(), 4800); } });
+  } else if (kind === 'bingo') {
+    const b = $('bingo'); b.textContent = `BINGO! ${data.name}`; b.hidden = false; SFX.bingo(); confetti(); setTimeout(() => { b.hidden = true; }, 4500);
+  }
+}
+
+$('go').onclick = () => { SFX.unlock(); SFX.set(true); $('gate').hidden = true; connect('stage', draw, onEvent, (ok) => { $('dot').classList.toggle('on', ok); $('status').textContent = ok ? 'live' : 'reconnecting'; }); };
+$('snd').onclick = () => { SFX.set(!SFX.on); $('snd').textContent = 'Sound: ' + (SFX.on ? 'on' : 'off'); };
+$('fs').onclick = () => { (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {}); };
+</script></body></html>

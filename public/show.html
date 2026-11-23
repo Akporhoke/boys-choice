@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Boys' Choice Awards: Live</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,400&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="show.css">
+<style>
+main{max-width:640px;margin:0 auto;padding:.8rem .9rem 6.5rem}
+header{display:flex;justify-content:space-between;align-items:center;gap:.6rem;padding:.4rem 0}
+header h3{font-size:1.3rem}.dot{display:inline-block;width:.6em;height:.6em;border-radius:50%;background:#777;margin-right:.3em}.dot.on{background:#5be37d}
+.tabs{display:flex;gap:.4rem;margin:.4rem 0 .8rem;overflow-x:auto}.tabs button{flex:1;white-space:nowrap;padding:.55rem .7rem;font-size:.9rem}
+.tabs button[aria-selected=true]{background:var(--gold);color:var(--ink)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin:.55rem 0;text-align:left}.row label{flex:1;font-weight:600}.row select{flex:1.3}
+.bg{display:grid;grid-template-columns:repeat(3,1fr);gap:.4rem;margin:.8rem 0}
+.bc{min-height:5.2rem;padding:.4rem;font-size:.8rem;line-height:1.2;border-radius:10px;border:2px solid var(--gold-d);background:#0e0203;color:var(--ivory);cursor:pointer}
+.bc.on{background:var(--gold);color:var(--ink);font-weight:600;border-color:var(--gold)}
+#react{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;justify-content:center;gap:.4rem;padding:.55rem .5rem calc(.55rem + env(safe-area-inset-bottom));background:rgba(4,3,2,.92);border-top:1px solid var(--gold-d)}
+#react[hidden]{display:none}#react button{font-size:1.7rem;line-height:1;padding:.35rem .55rem;border-radius:14px;border:1px solid var(--gold-d);background:#14080a;cursor:pointer}
+#react button:active{transform:scale(1.3)}
+.me{font-size:.9rem;opacity:.85}
+</style></head>
+<body>
+<main>
+  <header><h3>The Boys' Choice Awards</h3><span><span class="dot" id="dot"></span><button class="btn ghost" id="snd" type="button" style="padding:.3rem .8rem;font-size:.75rem">Sound: off</button></span></header>
+  <div id="gate" class="panel" hidden></div>
+  <div id="main" hidden>
+    <p class="me" id="me"></p>
+    <div class="tabs" role="tablist"><button class="btn ghost" role="tab" data-t="show" aria-selected="true">Show</button><button class="btn ghost" role="tab" data-t="predict" aria-selected="false">Predict</button><button class="btn ghost" role="tab" data-t="bingo" aria-selected="false">Bingo</button><button class="btn ghost" role="tab" data-t="winners" aria-selected="false">Winners</button></div>
+    <div id="view"></div>
+  </div>
+</main>
+<div id="react" hidden></div>
+<script src="sfx.js"></script><script src="showcore.js"></script>
+<script>
+const token = myToken();
+let S = null, me = { checkedIn: false }, tab = 'show', cats = [], cur = null, sig = '', prevIdx = -1, prevPhase = '', toastTimer;
+
+// ---- check-in (the red carpet): your name is what shows on the guest wall and the leaderboards ----
+function gate() {
+  const g = $('gate'), name = el('input'), err = el('p', '', 'err'), b = el('button', 'Check in', 'btn');
+  name.maxLength = 40; name.placeholder = 'Your name'; name.autocomplete = 'name'; b.style.marginTop = '.6rem';
+  b.onclick = async () => { b.disabled = true; err.textContent = ''; try { await api('/api/show/checkin', { token, name: name.value }); await refreshMe(); } catch (e) { err.textContent = e.message; b.disabled = false; } };
+  g.replaceChildren(crown(), el('h2', 'The Red Carpet'), el('p', 'Check in to join the ceremony, make predictions and react live.'), name, err, b);
+  g.hidden = false; $('main').hidden = true;
+}
+async function refreshMe() {
+  me = await api('/api/show/me?token=' + encodeURIComponent(token)).catch(() => ({ checkedIn: false }));
+  if (!me.checkedIn) return gate();
+  $('gate').hidden = true; $('main').hidden = false;
+  $('me').textContent = `${me.name}${me.of ? ` | predictions: ${me.score} of ${me.of} right so far` : ''}`;
+  paint(true);
+}
+
+// ---- sounds on this phone (off by default so a room of phones stays quiet) ----
+function sounds(s) {
+  if (!SFX.on || s.phase === 'pre') return; const T = s.step.type;
+  if (T === 'envelope') SFX.drumroll(8); else if (T === 'winner' || T === 'end') SFX.winner(); else if (T === 'open') SFX.welcome();
+  else if (T === 'intro') SFX.whoosh(); else if (T === 'ad' || ['captionwin', 'oracle', 'hype'].includes(T)) SFX.jingle();
+}
+$('snd').onclick = () => { SFX.unlock(); SFX.set(!SFX.on); $('snd').textContent = 'Sound: ' + (SFX.on ? 'on' : 'off'); };
+
+// ---- tabs ----
+document.querySelectorAll('.tabs button').forEach((b) => { b.onclick = () => { tab = b.dataset.t; document.querySelectorAll('.tabs button').forEach((x) => x.setAttribute('aria-selected', x === b)); paint(true); }; });
+
+// ---- the Show tab follows the host. Everything else is yours. ----
+const hooks = {
+  caption: (text) => api('/api/show/caption', { token, text }), vote: (id) => api('/api/show/capvote', { token, id }),
+  cert: (w, c) => shareCert(w, c), onTick: () => SFX.tick(), onTimeUp: () => SFX.playoff(),
+};
+function paint(force) {
+  if (!S || !me.checkedIn) return;
+  const v = $('view'); if (cur) cur._stops && cur._stops.forEach((f) => f());
+  let node;
+  if (tab === 'show') node = renderStep(S, 'phone', hooks);
+  else if (tab === 'predict') node = predictTab();
+  else if (tab === 'bingo') node = bingoTab();
+  else node = winnersTab();
+  cur = node; v.replaceChildren(node);
+}
+function onState(s) {
+  S = s;
+  const next = s.phase + '|' + s.idx + '|' + JSON.stringify(s.step) + (s.phase === 'pre' ? '|' + s.guests : '');
+  $('react').hidden = !(me.checkedIn && s.phase === 'live');
+  if (!$('react').children.length) s.emojis.forEach((e) => { const b = el('button', e); b.setAttribute('aria-label', 'React ' + e); b.onclick = () => api('/api/show/react', { token, emoji: e }).catch(() => {}); $('react').append(b); });
+  if (s.idx !== prevIdx || s.phase !== prevPhase) { sounds(s); if (s.step.type === 'winner') confetti(); refreshMe(); }   // new step: sound, confetti, and update my score
+  prevIdx = s.idx; prevPhase = s.phase;
+  if (next !== sig) { sig = next; if (tab === 'show') paint(); else if (tab === 'winners') paint(); }
+}
+
+// ---- Predict tab ----
+function predictTab() {
+  const box = el('section', undefined, 'panel'); box.append(el('h2', 'Predict the winners'));
+  const locked = S.phase !== 'pre', picks = me.picks || {};
+  box.append(el('p', locked ? 'Predictions are closed. The show has started.' : 'Guess who wins each award. Locks when the show starts. Most right = Best Oracle.'));
+  const sel = {};
+  cats.forEach((c) => { const row = el('div', undefined, 'row'), lab = el('label', c.name), s = el('select'); lab.htmlFor = s.id = 'p_' + c.id;
+    s.append(new Option('No guess', '')); c.nominees.forEach((n) => s.append(new Option(n.name, n.id))); s.value = picks[c.id] || ''; s.disabled = locked; sel[c.id] = s; row.append(lab, s); box.append(row); });
+  if (!locked) { const msg = el('p', '', 'err'), b = el('button', 'Save my predictions', 'btn');
+    b.onclick = async () => { try { const picksOut = Object.fromEntries(Object.entries(sel).map(([k, s]) => [k, s.value]).filter(([, v]) => v)); const r = await api('/api/show/predict', { token, picks: picksOut }); msg.style.color = 'var(--gold)'; msg.textContent = `Saved ${r.count} predictions.`; me.picks = picksOut; } catch (e) { msg.style.color = ''; msg.textContent = e.message; } };
+    box.append(b, msg); }
+  const q = el('a', 'Play The Boys Quiz', 'btn ghost'); q.href = '/quiz.html'; q.style.cssText = 'display:inline-block;margin-top:1rem'; box.append(q);
+  return box;
+}
+
+// ---- Bingo tab: a card of things that might happen tonight. Tap what you see. ----
+const BINGO = ['Someone refuses to accept an award', 'A winner cries', "Someone says 'I did not vote for myself'", 'A speech goes over time', "Someone begs 'share me sub'", 'The group chat ghost speaks',
+  "A winner says 'I want to thank God'", 'Someone leaves the call', 'A fake sponsor makes you laugh', 'A result shocks everyone', 'A tie', "Someone asks 'who is that?' about a photo",
+  'Applause from one person only', "Someone says 'this is rigged'", 'The network drops', 'A winner thanks their mother'];
+function bingoTab() {
+  let card = JSON.parse(localStorage.getItem('bingo_card') || 'null');
+  if (!card) { const pool = BINGO.slice().sort(() => Math.random() - 0.5).slice(0, 9); card = { cells: pool, marked: [] }; localStorage.setItem('bingo_card', JSON.stringify(card)); }
+  const box = el('section', undefined, 'panel'), grid = el('div', undefined, 'bg'), msg = el('p', '', 'err');
+  box.append(el('h2', 'Ceremony Bingo'), el('p', 'Tap a square when it happens. Get a line and shout BINGO.'));
+  const lines = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+  const done = () => lines.some((l) => l.every((i) => card.marked.includes(i)));
+  const btn = el('button', 'BINGO!', 'btn'); btn.hidden = !done();
+  card.cells.forEach((t, i) => { const c = el('button', t, 'bc' + (card.marked.includes(i) ? ' on' : '')); c.onclick = () => { card.marked = card.marked.includes(i) ? card.marked.filter((x) => x !== i) : [...card.marked, i]; c.classList.toggle('on'); localStorage.setItem('bingo_card', JSON.stringify(card)); btn.hidden = !done(); }; grid.append(c); });
+  btn.onclick = async () => { try { await api('/api/show/bingo', { token }); msg.style.color = 'var(--gold)'; msg.textContent = 'Your BINGO is on the big screen!'; btn.disabled = true; } catch (e) { msg.style.color = ''; msg.textContent = e.message; } };
+  const again = el('button', 'New card', 'btn ghost'); again.style.marginLeft = '.6rem'; again.onclick = () => { localStorage.removeItem('bingo_card'); paint(true); };
+  box.append(grid, btn, again, msg); return box;
+}
+
+// ---- Winners tab: everyone announced so far, each with a card you can post ----
+function winnersTab() {
+  const box = el('section', undefined, 'panel'); box.append(el('h2', 'The winners so far'));
+  if (!S.revealed.length) box.append(el('p', 'Nobody yet. Stay tuned.'));
+  S.revealed.forEach((r) => { const d = el('div'); d.style.cssText = 'margin:1rem 0;text-align:left'; d.append(el('div', r.cat, 'pill'));
+    r.winners.forEach((w) => { const line = el('div'); line.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin:.4rem 0'; line.append(el('b', w.name));
+      const b = el('button', 'Winner card', 'btn ghost'); b.style.cssText = 'padding:.4rem .9rem;font-size:.8rem'; b.onclick = () => shareCert(w, r.cat); line.append(b); d.append(line); });
+    if (!r.winners.length) d.append(el('p', 'No votes')); box.append(d); });
+  return box;
+}
+
+// ---- start ----
+(async () => {
+  cats = (await api('/api/ballot')).categories;
+  connect('phone', onState, null, (ok) => $('dot').classList.toggle('on', ok));
+  await refreshMe();
+})();
+</script></body></html>

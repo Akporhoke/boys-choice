@@ -1,0 +1,36 @@
+/* show.css: the look of the ceremony pages (gold on velvet, the same family as the voting site) */
+:root{--ink:#040302;--gold:#e8cf9a;--gold-d:#b98d45;--ivory:#f6ead0;--bulb:#fff3d6;--red:#b3252b}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;color:var(--ivory);font:400 1rem/1.5 Lora,Georgia,serif;
+  background:radial-gradient(ellipse at 50% 0%,#5a0c12 0,#2a0508 55%,var(--ink) 100%) fixed}
+h1,h2,h3{font-family:"Cormorant Garamond",Georgia,serif;font-weight:700;line-height:1.05;margin:0;color:var(--gold)}
+button,input,select,textarea{font:inherit}
+.btn{font:600 1rem Lora,serif;border-radius:999px;padding:.8rem 1.5rem;cursor:pointer;border:2px solid var(--gold);background:var(--gold);color:var(--ink)}
+.btn.ghost{background:transparent;color:var(--gold)}.btn:disabled{opacity:.5;cursor:default}
+.btn:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+input,select,textarea{width:100%;padding:.75rem 1rem;border-radius:10px;border:2px solid var(--gold-d);background:#0e0203;color:var(--ivory)}
+.panel{background:rgba(10,2,3,.85);border:2px solid var(--gold-d);border-radius:16px;padding:1.2rem}
+.err{color:#ffb4a8;min-height:1.4em;margin:.4rem 0}
+.frame{display:block;padding:9px;border-radius:6px;background:radial-gradient(circle,var(--bulb) 38%,#b3252b 42% 62%,transparent 66%) 0 0/13px 13px,var(--gold-d)}
+.frame img,.frame video{display:block;width:100%;aspect-ratio:1;object-fit:cover;border:3px solid var(--ink);background:#000}
+.frame.win{box-shadow:0 0 0 3px var(--gold),0 0 50px 12px rgba(255,214,120,.6)}
+.crown{width:90px;color:var(--gold);filter:drop-shadow(0 0 14px rgba(232,207,154,.5))}
+.pill{display:inline-block;padding:.25rem .8rem;border:1px solid var(--gold-d);border-radius:999px;font-size:.85rem;margin:.15rem}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+/* the step screens (shared by phone and big screen) */
+.step{text-align:center;max-width:1100px;margin:0 auto;padding:1rem}
+.step h1{font-size:clamp(2rem,8vw,4rem)}.step h2{font-size:clamp(1.6rem,6vw,3rem)}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:.8rem;margin-top:1rem}
+.grid figure{margin:0}.grid figcaption{font:700 1.15rem "Cormorant Garamond",serif;margin-top:.4rem}
+.winrow{display:flex;gap:1.4rem;justify-content:center;flex-wrap:wrap;margin:1rem 0}
+.winrow figure{margin:0;width:min(260px,70vw)}.winrow b{display:block;font:700 1.8rem "Cormorant Garamond",serif;margin-top:.5rem;color:var(--gold)}
+.roast{font-style:italic;max-width:34rem;margin:.6rem auto;opacity:.95}
+.bar{display:flex;align-items:center;gap:.6rem;margin:.3rem auto;max-width:34rem;text-align:left}.bar span{flex:0 0 9rem}.bar i{display:block;height:12px;border-radius:6px;background:var(--gold)}.bar b{width:2rem;text-align:right}
+.count{font:700 clamp(4rem,22vw,9rem)/1 "Cormorant Garamond",serif;color:var(--gold);text-shadow:0 0 40px rgba(232,207,154,.5)}
+.lb{list-style:none;margin:1rem auto;padding:0;max-width:30rem;text-align:left}.lb li{display:flex;justify-content:space-between;gap:1rem;padding:.55rem .2rem;border-bottom:1px solid rgba(232,207,154,.25);font-size:1.15rem}.lb li:first-child{color:var(--gold);font-weight:600}
+.env{width:min(240px,60vw);margin:1rem auto;animation:wob 1.4s ease-in-out infinite}
+@keyframes wob{0%,100%{transform:rotate(-2deg) scale(1)}50%{transform:rotate(2deg) scale(1.06)}}
+.caps{display:grid;gap:.6rem;max-width:34rem;margin:1rem auto}.cap{padding:.9rem 1rem;border-radius:12px;border:2px solid var(--gold-d);background:#0e0203;color:var(--ivory);text-align:left;font-size:1.05rem}
+button.cap{cursor:pointer}button.cap:hover,button.cap.on{border-color:var(--gold);background:#1f0a0c}
+.slide{width:min(520px,90vw);height:min(62vh,640px);object-fit:contain;margin:1rem auto;display:block;border-radius:8px}
+@media(prefers-reduced-motion:reduce){.env{animation:none}}
