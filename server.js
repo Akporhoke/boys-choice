@@ -4,11 +4,14 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { categories } = require('./data/nominees');
+const createStore = require('./store');
+
+async function main() {
+const store = await createStore(path.join(__dirname, 'data'));   // connects to MongoDB (or files in test mode)
 
 const PORT = process.env.PORT || 3000;
 const VOTE_CODE = (process.env.VOTE_CODE || '').trim();   // empty = no code needed
 const ADMIN_KEY = process.env.ADMIN_KEY || '';            // empty = results locked
-const DB = path.join(__dirname, 'data', 'votes.json');    // all votes live in this file
 
 const app = express();
 // NEW: Render puts one proxy in front of the site. Without this line every visitor looks like the SAME IP address,
@@ -20,17 +23,16 @@ app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, p) => { if (/[\\/](img|videos)[\\/]/.test(p)) res.setHeader('Cache-Control', 'public, max-age=86400'); },
 }));
 
-// Read/write the votes file. Writing to a temp file then renaming avoids a half-written file.
-const load = () => { try { return JSON.parse(fs.readFileSync(DB, 'utf8')); } catch { return []; } };
-const save = (v) => { fs.writeFileSync(DB + '.tmp', JSON.stringify(v, null, 2)); fs.renameSync(DB + '.tmp', DB); };
+// Votes live in MongoDB (see store.js).
+const load = () => store.votes.all();                    // the votes (kept in memory, saved in MongoDB)
 const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' '); // "  Ogor  " == "ogor"
 const codeOk = (c) => !VOTE_CODE || String(c || '').trim() === VOTE_CODE;
 
 // CHANGED: settings (reveal switch + NEW close-voting switch) live in one small file.
 // saveSettings MERGES a change into what is already there, so flipping one switch never erases the other.
-const SET = path.join(__dirname, 'data', 'settings.json');
-const readSettings = () => { try { return JSON.parse(fs.readFileSync(SET, 'utf8')); } catch { return {}; } };
-const saveSettings = (patch) => fs.writeFileSync(SET, JSON.stringify({ ...readSettings(), ...patch }));
+const settingsDoc = store.doc('settings', {});
+const readSettings = () => settingsDoc.get() || {};
+const saveSettings = (patch) => settingsDoc.set({ ...readSettings(), ...patch });   // saved in MongoDB, so it survives updates
 const revealed = () => !!readSettings().revealed;       // public results page open?
 // NEW: voting has three states. 'closed' (admin pressed Close), 'soon' (an opening date is set and has not arrived yet), 'open'.
 // With no opening date saved, voting is open, so existing setups keep working.
@@ -73,6 +75,9 @@ app.get('/api/ballot', (req, res) => res.json({
   needsCode: !!VOTE_CODE, closed: votingState() === 'closed', voting: votingState(), opensAt: readSettings().opensAt || '',
   categories, voters: load().length }));
 
+// Health check (also good for the UptimeRobot ping): shows WHERE the data is saved, never any secrets.
+app.get('/api/health', (req, res) => res.json({ ok: true, storage: store.mode, votes: load().length }));
+
 // Public voter counter: just a number, no names.
 app.get('/api/count', (req, res) => res.json({ voters: load().length }));
 
@@ -84,7 +89,7 @@ app.post('/api/enter', limit, (req, res) => {
 });
 
 // Submit one ballot. picks = { categoryId: nomineeId }, skipped categories are simply missing.
-app.post('/api/vote', limit, (req, res) => {
+app.post('/api/vote', limit, async (req, res) => {
   // NEW: the real lock. Even someone mid-ballot when the admin closed voting is turned away here,
   // and nobody can vote before the opening date, whatever the browser says.
   const vs = votingState();
@@ -105,11 +110,14 @@ app.post('/api/vote', limit, (req, res) => {
   }
   if (!Object.keys(clean).length) return res.status(400).json({ error: 'Pick at least one nominee.' });
 
-  const votes = load();
-  if (votes.some((v) => v.name === who || v.token === token))   // one ballot per name AND per device
+  if (load().some((v) => v.name === who || v.token === token))   // one ballot per name AND per device
     return res.status(409).json({ error: 'This name or device has already voted.' });
-  votes.push({ name: who, display: String(name).trim().slice(0, 60), token, picks: clean, at: new Date().toISOString() });
-  save(votes);
+  try {                                                // the voter only sees "ok" AFTER MongoDB has saved the vote
+    await store.votes.add({ name: who, display: String(name).trim().slice(0, 60), token, picks: clean, at: new Date().toISOString() });
+  } catch (e) {
+    if (e && e.code === 11000) return res.status(409).json({ error: 'This name or device has already voted.' });   // two taps at the same moment: the database let only one through
+    console.error('Could not save a vote:', e); return res.status(500).json({ error: 'Your vote could not be saved. Please try again.' });
+  }
   res.json({ ok: true });
 });
 
@@ -154,14 +162,14 @@ const tally = (votes) => categories.map((c) => ({
 
 // NEW: the LIVE CEREMONY (big screen, phones, host panel). All of it lives in show-routes.js.
 const show = require('./show-routes')(app, { adminOk, load, categories, tally, saveSettings, limit,
-  dataDir: path.join(__dirname, 'data'), publicDir: path.join(__dirname, 'public') });
+  showDoc: store.doc('show', {}), publicDir: path.join(__dirname, 'public') });
 
 // Admin results: needs the admin key. Also lists voter NAMES (never their picks).
 app.get('/api/results', limit, (req, res) => {
   if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
   const votes = load();
   res.json({
-    voters: votes.length, revealed: revealed(), closed: votingState() === 'closed',   // CHANGED: also tells the admin page if voting is closed
+    storage: store.mode, voters: votes.length, revealed: revealed(), closed: votingState() === 'closed',   // CHANGED: also tells the admin page if voting is closed
     voting: votingState(), opensAt: readSettings().opensAt || '',                     // NEW: current state and the saved opening date
     people: votes.map((v) => ({ key: v.name, name: v.display || v.name, at: v.at })),
     categories: tally(votes),
@@ -200,7 +208,7 @@ app.post('/api/admin/opens', limit, (req, res) => {
 // ---- CHANGED: The Boys Quiz. A pool of up to 20 questions; every play gets 6 of them picked at random. ----
 // Stored in data/quiz.json (the same file as before, so questions you already saved carry over).
 // Each question: { id, q: "question", options: [4 strings, blank = unused], answer: index 0-3 of the correct option }.
-const QZ = path.join(__dirname, 'data', 'quiz.json');
+const quizDoc = store.doc('quiz', []);                    // the question pool, saved in MongoDB
 const QMAX = 20, QNEED = 6;                              // most questions kept / questions per play
 // Cleans one question: trims and shortens text, always 4 option slots, keeps its id (or uses the fallback).
 const qClean = (x, fallbackId) => {
@@ -217,7 +225,7 @@ const qClean = (x, fallbackId) => {
 const qValid = (x) => !!(x && x.q && x.options.filter(Boolean).length >= 2 && x.answer >= 0 && x.answer < 4 && x.options[x.answer]);
 // Reads the pool. Old 6-slot files still work: empty slots are dropped and the others get ids like "old0".
 const loadQuiz = () => {
-  try { const a = JSON.parse(fs.readFileSync(QZ, 'utf8')); if (Array.isArray(a)) return a.map((x, i) => qClean(x, 'old' + i)).filter(qValid); } catch {}
+  const a = quizDoc.get(); if (Array.isArray(a)) return a.map((x, i) => qClean(x, 'old' + i)).filter(qValid);
   return [];                                             // nothing saved yet
 };
 // Fisher-Yates shuffle using crypto.randomInt, so every question has the same chance of being picked.
@@ -269,14 +277,14 @@ app.post('/api/admin/quiz', limit, (req, res) => {
     if (seen.has(x.id)) x.id = crypto.randomBytes(4).toString('hex'); // never two questions with the same id
     seen.add(x.id); out.push(x);
   }
-  fs.writeFileSync(QZ + '.tmp', JSON.stringify(out, null, 2)); fs.renameSync(QZ + '.tmp', QZ);   // temp file then rename, so a crash never leaves half a file
+  quizDoc.set(out);
   res.json({ ok: true, ready: out.length >= QNEED, count: out.length });
 });
 
 // ---- Feedback: star ratings plus an optional note, stored without names ----
-const FB = path.join(__dirname, 'data', 'feedback.json');
-const loadFb = () => { try { return JSON.parse(fs.readFileSync(FB, 'utf8')); } catch { return []; } };
-const saveFb = (v) => { fs.writeFileSync(FB + '.tmp', JSON.stringify(v, null, 2)); fs.renameSync(FB + '.tmp', FB); };
+const fbDoc = store.doc('feedback', []);
+const loadFb = () => fbDoc.get() || [];
+const saveFb = (v) => fbDoc.set(v);
 
 // type 'process' = rating the nomination and voting (only people who voted); 'ceremony' = after results open.
 app.post('/api/feedback', limit, (req, res) => {
@@ -311,18 +319,29 @@ app.post('/api/admin/feedback/clear', limit, (req, res) => {
 });
 
 // Retake: delete ONE person's ballot so they can vote again (matched by name).
-app.post('/api/admin/retake', limit, (req, res) => {
+app.post('/api/admin/retake', limit, async (req, res) => {
   if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
-  const key = norm(req.body && req.body.name);
-  const votes = load(), rest = votes.filter((v) => v.name !== key);
-  if (rest.length === votes.length) return res.status(404).json({ error: 'No ballot found for that name.' });
-  save(rest); res.json({ ok: true });
+  try {
+    if (!(await store.votes.remove(norm(req.body && req.body.name)))) return res.status(404).json({ error: 'No ballot found for that name.' });
+    res.json({ ok: true });
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Could not delete that ballot.' }); }
 });
 
 // Clear: delete EVERY ballot, so the results reset to zero and everyone can vote again.
-app.post('/api/admin/clear', limit, (req, res) => {
+app.post('/api/admin/clear', limit, async (req, res) => {
   if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
-  save([]); res.json({ ok: true });
+  try { await store.votes.clear(); res.json({ ok: true }); } catch (e) { console.error(e); res.status(500).json({ error: 'Could not clear the votes.' }); }
 });
 
-app.listen(PORT, () => console.log(`Awards site running on http://localhost:${PORT}`));
+// Backup: everything in one JSON file (admin only). The admin page has a "Download backup" button.
+app.get('/api/admin/export', limit, (req, res) => {
+  if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
+  res.json({ exportedAt: new Date().toISOString(), votes: load(), settings: readSettings(), feedback: loadFb(), quiz: quizDoc.get(), show: store.doc('show', {}).get() });
+});
+
+const server = app.listen(PORT, () => console.log(`Awards site running on http://localhost:${PORT} (data saved in: ${store.mode})`));
+// When Render stops the old version during an update, finish saving first
+process.on('SIGTERM', () => { server.close(); store.close().finally(() => process.exit(0)); });
+}
+
+main().catch((e) => { console.error('The site could not start:', e.message); process.exit(1); });   // a clear message in the Render logs

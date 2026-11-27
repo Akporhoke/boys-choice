@@ -2,7 +2,7 @@
 // One "show" lives on the server. The host moves it forward with Next; every phone and the big screen follow in real time.
 // Things people can do: check in, predict winners, react with emojis, play bingo, write and vote on captions.
 // Added to server.js with:  const show = require('./show-routes')(app, { adminOk, load, categories, tally, saveSettings, limit, dataDir, publicDir });
-// All show data is kept in data/show.json. Every read/write goes through load/save below, so moving to MongoDB later only touches this file.
+// All show data is saved through the shared store (MongoDB), see store.js.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -26,12 +26,11 @@ const ROASTS = [                                       // used when the host has
 ];
 
 module.exports = function mountShow(app, ctx) {
-  const { adminOk, load, categories, tally, saveSettings, limit, dataDir, publicDir } = ctx;
-  const FILE = path.join(dataDir, 'show.json');
+  const { adminOk, load, categories, tally, saveSettings, limit, showDoc, publicDir } = ctx;
   const fresh = () => ({ phase: 'pre', step: 0, startedAt: 0, guests: {}, predictions: {}, reactions: {}, bingo: {}, quiz: {},
     roasts: {}, ads: DEFAULT_ADS.slice(), captionPhoto: '', captions: [], capVotes: {} });
-  let S; try { S = { ...fresh(), ...JSON.parse(fs.readFileSync(FILE, 'utf8')) }; } catch { S = fresh(); }
-  const save = () => { fs.writeFileSync(FILE + '.tmp', JSON.stringify(S)); fs.renameSync(FILE + '.tmp', FILE); };
+  let S = { ...fresh(), ...(showDoc.get() || {}) };        // the show lives in MongoDB (see store.js)
+  const save = () => showDoc.set(S);
   let dirty = false, version = 1;
   setInterval(() => { if (dirty) { dirty = false; save(); } }, 5000).unref();   // reactions are saved in batches, not one by one
 
