@@ -40,7 +40,10 @@ async function load() {
         a.download = 'boyschoice-backup-' + new Date().toISOString().slice(0, 10) + '.json'; a.click();
       } catch (e) { $('err').textContent = e.message; }
     };
-    out.append(stor, bk);
+    // Proof the lock is remembered: which version is running and since when. A restart changes "started" but NOT the lock; a new version locks voting.
+    const srv = el('p', d.server ? `Running version ${d.server.version}, started ${new Date(d.server.startedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}. Open or locked is saved in MongoDB, so sleeping never changes it. Only an update locks voting.` : '');
+    srv.style.cssText = 'font-size:.85rem;opacity:.85';
+    out.append(stor, srv, bk);
 
     // NEW: Close / reopen voting. While closed, nobody can submit a ballot (the server refuses it).
     const state = el('p', d.closed ? 'Voting is CLOSED: no new ballots are accepted.' : 'Voting is OPEN.'); state.style.marginTop = '1.4rem';

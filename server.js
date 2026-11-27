@@ -7,6 +7,7 @@ const { categories } = require('./data/nominees');
 const createStore = require('./store');
 
 async function main() {
+const startedAt = new Date().toISOString();                          // when THIS run of the server began (shown on the admin page)
 const store = await createStore(path.join(__dirname, 'data'));   // connects to MongoDB (or files in test mode)
 
 const PORT = process.env.PORT || 3000;
@@ -43,6 +44,8 @@ const votingState = () => {
   return 'open';
 };
 
+// THE LOCK, IN SHORT: "open" or "closed" is saved in MongoDB, so sleeping or restarting never changes it.
+// Only a NEW VERSION OF THE CODE (a new git commit on Render) locks voting. An ordinary restart of the same version leaves it exactly as it was.
 // NEW: LOCK AFTER EVERY UPDATE. Render tells the server which version of the code is running (RENDER_GIT_COMMIT).
 // Each time that version is new (you pushed an update), voting is locked and the admin has to press "Reopen voting".
 // The version we already locked for is remembered in settings.json, so an ordinary restart of the SAME version does not lock again
@@ -50,7 +53,7 @@ const votingState = () => {
 // Locally there is no RENDER_GIT_COMMIT, so nothing locks while you test. To switch this off, set LOCK_ON_DEPLOY=false on Render.
 const deployed = process.env.RENDER_GIT_COMMIT || '';
 if (deployed && process.env.LOCK_ON_DEPLOY !== 'false' && readSettings().lockedFor !== deployed) {
-  saveSettings({ closed: true, lockedFor: deployed });
+  await saveSettings({ closed: true, lockedFor: deployed });
   console.log('New version detected: voting is locked until the admin reopens it.');
 }
 
@@ -76,7 +79,7 @@ app.get('/api/ballot', (req, res) => res.json({
   categories, voters: load().length }));
 
 // Health check (also good for the UptimeRobot ping): shows WHERE the data is saved, never any secrets.
-app.get('/api/health', (req, res) => res.json({ ok: true, storage: store.mode, votes: load().length }));
+app.get('/api/health', (req, res) => res.json({ ok: true, storage: store.mode, votes: load().length, voting: votingState(), version: deployed ? deployed.slice(0, 7) : 'local', startedAt }));
 
 // Public voter counter: just a number, no names.
 app.get('/api/count', (req, res) => res.json({ voters: load().length }));
@@ -169,7 +172,7 @@ app.get('/api/results', limit, (req, res) => {
   if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
   const votes = load();
   res.json({
-    storage: store.mode, voters: votes.length, revealed: revealed(), closed: votingState() === 'closed',   // CHANGED: also tells the admin page if voting is closed
+    storage: store.mode, server: { version: deployed ? deployed.slice(0, 7) : 'local', startedAt }, voters: votes.length, revealed: revealed(), closed: votingState() === 'closed',   // CHANGED: also tells the admin page if voting is closed
     voting: votingState(), opensAt: readSettings().opensAt || '',                     // NEW: current state and the saved opening date
     people: votes.map((v) => ({ key: v.name, name: v.display || v.name, at: v.at })),
     categories: tally(votes),
@@ -183,25 +186,25 @@ app.get('/api/public-results', (req, res) => {
 });
 
 // Admin flips the public results page open or closed. CHANGED: merges into settings instead of overwriting them.
-app.post('/api/admin/reveal', limit, (req, res) => {
+app.post('/api/admin/reveal', limit, async (req, res) => {
   if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
-  saveSettings({ revealed: !!(req.body && req.body.revealed) });
+  await saveSettings({ revealed: !!(req.body && req.body.revealed) });   // answer only AFTER MongoDB has it
   res.json({ ok: true });
 });
 
 // NEW: admin closes or reopens voting. While closed, /api/vote and /api/enter refuse everyone.
-app.post('/api/admin/close', limit, (req, res) => {
+app.post('/api/admin/close', limit, async (req, res) => {
   if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
-  saveSettings({ closed: !!(req.body && req.body.closed) });
+  await saveSettings({ closed: !!(req.body && req.body.closed) });     // so "open" or "closed" is remembered even if the server is killed a moment later
   res.json({ ok: true });
 });
 
 // NEW: admin sets the date voting opens (an ISO date string), or sends '' to clear it = "open voting now".
-app.post('/api/admin/opens', limit, (req, res) => {
+app.post('/api/admin/opens', limit, async (req, res) => {
   if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
   const v = req.body && req.body.opensAt;
   if (v && Number.isNaN(Date.parse(v))) return res.status(400).json({ error: 'That date is not valid.' });
-  saveSettings({ opensAt: v ? new Date(v).toISOString() : '' });
+  await saveSettings({ opensAt: v ? new Date(v).toISOString() : '' });
   res.json({ ok: true });
 });
 

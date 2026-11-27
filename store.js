@@ -74,6 +74,7 @@ module.exports = async function createStore(dataDir) {
         const copy = JSON.parse(JSON.stringify(value));    // a snapshot, so later changes cannot sneak into an older save
         if (docsCol) chain = chain.then(() => docsCol.replaceOne({ _id: name }, { _id: name, value: copy }, { upsert: true })).catch((e) => console.error(`MongoDB save failed for "${name}":`, e.message));
         else writeFile(name, copy);
+        return chain;                                       // callers can await this to be SURE it is saved before they answer
       },
     };
   }
