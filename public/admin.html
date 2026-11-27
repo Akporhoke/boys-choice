@@ -28,6 +28,20 @@ async function load() {
     const out = $('out'); out.replaceChildren();
     out.append(el('p', `${d.voters} people have voted.`));
 
+    // WHERE the votes are saved. Anything other than MongoDB is a warning, because files are wiped on every update.
+    const stor = el('p', d.storage === 'mongodb' ? 'Storage: MongoDB. Updates and restarts do not lose votes.' : 'WARNING: votes are saved in files, NOT MongoDB. They will be lost on the next update. Check MONGODB_URI on Render.');
+    stor.style.color = d.storage === 'mongodb' ? 'var(--gold)' : '#ffb4a8';
+    // Backup: downloads every vote, setting, quiz question and feedback as one file, as an extra safety copy
+    const bk = el('button', 'Download backup', 'ghost'); bk.style.marginBottom = '.6rem';
+    bk.onclick = async () => {
+      try {
+        const data = await call('/api/admin/export'), a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+        a.download = 'boyschoice-backup-' + new Date().toISOString().slice(0, 10) + '.json'; a.click();
+      } catch (e) { $('err').textContent = e.message; }
+    };
+    out.append(stor, bk);
+
     // NEW: Close / reopen voting. While closed, nobody can submit a ballot (the server refuses it).
     const state = el('p', d.closed ? 'Voting is CLOSED: no new ballots are accepted.' : 'Voting is OPEN.'); state.style.marginTop = '1.4rem';
     const cl = el('button', d.closed ? 'Reopen voting' : 'Close voting', d.closed ? 'go' : 'ghost danger');
