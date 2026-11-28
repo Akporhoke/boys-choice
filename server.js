@@ -165,7 +165,7 @@ const tally = (votes) => categories.map((c) => ({
 
 // NEW: the LIVE CEREMONY (big screen, phones, host panel). All of it lives in show-routes.js.
 const show = require('./show-routes')(app, { adminOk, load, categories, tally, saveSettings, limit,
-  showDoc: store.doc('show', {}), publicDir: path.join(__dirname, 'public') });
+  showDoc: store.doc('show', {}), audio: store.audio, votingState, storageMode: store.mode, publicDir: path.join(__dirname, 'public') });
 
 // Admin results: needs the admin key. Also lists voter NAMES (never their picks).
 app.get('/api/results', limit, (req, res) => {

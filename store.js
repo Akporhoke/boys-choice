@@ -6,11 +6,13 @@
 // for the same name or device, even if two people tap Submit at the same moment.
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 module.exports = async function createStore(dataDir) {
   const uri = (process.env.MONGODB_URI || '').trim();
   const cache = { votes: [], docs: {} };                 // the in-memory copy
-  let votesCol = null, docsCol = null, client = null, chain = Promise.resolve();
+  let votesCol = null, docsCol = null, audioCol = null, client = null, chain = Promise.resolve();
+  let audioMeta = [];                                    // list of audio clips (without the sound itself)
 
   // files: only used in test mode, and to copy old data in the very first time MongoDB is empty
   const file = (n) => path.join(dataDir, n + '.json');
@@ -26,7 +28,8 @@ module.exports = async function createStore(dataDir) {
     try { await client.connect(); }                      // fails if the address, password or network access is wrong
     catch (e) { throw new Error('Could not connect to MongoDB: ' + e.message); }
     const db = client.db(process.env.MONGODB_DB || 'boyschoice');
-    votesCol = db.collection('votes'); docsCol = db.collection('docs');
+    votesCol = db.collection('votes'); docsCol = db.collection('docs'); audioCol = db.collection('audio');
+    audioMeta = (await audioCol.find({}, { projection: { data: 0 } }).toArray()).map(({ _id, ...m }) => ({ id: _id, ...m }));
     await votesCol.createIndex({ name: 1 }, { unique: true });          // one ballot per name, enforced by the database
     cache.votes = (await votesCol.find({}).toArray()).map(fromDoc).sort((a, b) => String(a.at).localeCompare(String(b.at)));
     for (const d of await docsCol.find({}).toArray()) cache.docs[d._id] = d.value;
@@ -40,7 +43,7 @@ module.exports = async function createStore(dataDir) {
     }
     console.log(`MongoDB connected: ${cache.votes.length} votes loaded.`);
   } else {
-    cache.votes = readFile('votes', []);
+    cache.votes = readFile('votes', []); audioMeta = readFile('audio-index', []);
     console.warn('WARNING: MONGODB_URI is not set. Data is saved in files, which Render wipes on every update.');
   }
 
@@ -64,6 +67,35 @@ module.exports = async function createStore(dataDir) {
     },
   };
 
+  // ---- audio clips: the nominees' recorded speeches ----
+  // Each clip is ONE document with the sound inside (clips are small, under 3 MB). Listing never loads the sound itself.
+  const audioDir = path.join(dataDir, 'audio'), audioCache = new Map();
+  const audio = {
+    list: () => audioMeta,
+    async add(buf, meta) {
+      const id = crypto.randomBytes(8).toString('hex'), rec = { ...meta, size: buf.length, at: new Date().toISOString() };
+      if (audioCol) await audioCol.insertOne({ _id: id, ...rec, data: buf });
+      else { fs.mkdirSync(audioDir, { recursive: true }); fs.writeFileSync(path.join(audioDir, id + '.bin'), buf); }
+      audioMeta.push({ id, ...rec }); if (!audioCol) writeFile('audio-index', audioMeta);
+      return id;
+    },
+    async get(id) {                                       // returns { buf, meta } or null. Recent clips are kept in memory.
+      const meta = audioMeta.find((m) => m.id === id); if (!meta) return null;
+      if (audioCache.has(id)) return { buf: audioCache.get(id), meta };
+      let buf;
+      if (audioCol) { const d = await audioCol.findOne({ _id: id }); if (!d) return null; const b = d.data.buffer; buf = Buffer.from(b.subarray(0, d.data.position ?? b.length)); }
+      else buf = fs.readFileSync(path.join(audioDir, id + '.bin'));
+      if (audioCache.size > 30) audioCache.delete(audioCache.keys().next().value);
+      audioCache.set(id, buf); return { buf, meta };
+    },
+    async remove(id) {
+      if (!audioMeta.some((m) => m.id === id)) return false;
+      if (audioCol) await audioCol.deleteOne({ _id: id }); else { try { fs.unlinkSync(path.join(audioDir, id + '.bin')); } catch {} }
+      audioMeta = audioMeta.filter((m) => m.id !== id); audioCache.delete(id); if (!audioCol) writeFile('audio-index', audioMeta);
+      return true;
+    },
+  };
+
   // A "doc" is one small named JSON value: settings, feedback, quiz questions, live-show data.
   function doc(name, fallback) {
     if (!(name in cache.docs)) cache.docs[name] = readFile(name, fallback);
@@ -79,5 +111,5 @@ module.exports = async function createStore(dataDir) {
     };
   }
 
-  return { mode: uri ? 'mongodb' : 'files', votes, doc, async close() { await chain; if (client) await client.close(); } };
+  return { mode: uri ? 'mongodb' : 'files', votes, doc, audio, async close() { await chain; if (client) await client.close(); } };
 };

@@ -32,7 +32,7 @@ header h3{font-size:1.3rem}.dot{display:inline-block;width:.6em;height:.6em;bord
 <script src="sfx.js"></script><script src="showcore.js"></script>
 <script>
 const token = myToken();
-let S = null, me = { checkedIn: false }, tab = 'show', cats = [], cur = null, sig = '', prevIdx = -1, prevPhase = '', toastTimer;
+let prevLinks, S = null, viewer = false, me = { checkedIn: false }, tab = 'show', cats = [], cur = null, sig = '', prevIdx = -1, prevPhase = '', toastTimer;
 
 // ---- check-in (the red carpet): your name is what shows on the guest wall and the leaderboards ----
 function gate() {
@@ -40,13 +40,14 @@ function gate() {
   name.maxLength = 40; name.placeholder = 'Your name'; name.autocomplete = 'name'; b.style.marginTop = '.6rem';
   b.onclick = async () => { b.disabled = true; err.textContent = ''; try { await api('/api/show/checkin', { token, name: name.value }); await refreshMe(); } catch (e) { err.textContent = e.message; b.disabled = false; } };
   g.replaceChildren(crown(), el('h2', 'The Red Carpet'), el('p', 'Check in to join the ceremony, make predictions and react live.'), name, err, b);
+  if (S && S.phase !== 'pre') { const v = el('button', 'Just see the winners', 'btn ghost'); v.style.cssText = 'margin-top:.8rem;width:100%'; v.onclick = () => { viewer = true; me = { checkedIn: false, viewer: true }; tab = 'winners'; $('gate').hidden = true; $('main').hidden = false; document.querySelectorAll('.tabs button').forEach((x) => { x.hidden = x.dataset.t !== 'winners'; x.setAttribute('aria-selected', x.dataset.t === 'winners'); }); $('me').textContent = ''; paint(true); }; g.append(v); }
   g.hidden = false; $('main').hidden = true;
 }
 async function refreshMe() {
   me = await api('/api/show/me?token=' + encodeURIComponent(token)).catch(() => ({ checkedIn: false }));
-  if (!me.checkedIn) return gate();
+  if (!me.checkedIn) { if (viewer) { me = { checkedIn: false, viewer: true }; paint(true); return; } return gate(); }   // viewers (just looking at winners) skip check-in
   $('gate').hidden = true; $('main').hidden = false;
-  $('me').textContent = `${me.name}${me.of ? ` | predictions: ${me.score} of ${me.of} right so far` : ''}`;
+  $('me').textContent = `${me.name}${me.link ? ` | you are ${me.link.name}` : ''}${me.of ? ` | predictions: ${me.score} of ${me.of} right so far` : ''}`;
   paint(true);
 }
 
@@ -58,6 +59,13 @@ function sounds(s) {
 }
 $('snd').onclick = () => { SFX.unlock(); SFX.set(!SFX.on); $('snd').textContent = 'Sound: ' + (SFX.on ? 'on' : 'off'); };
 
+// ---- live events: everyone's reactions fly across this screen too, and the host can play a recorded speech ----
+const clip = new Audio();
+function onEvent(kind, data) {
+  if (kind === 'react') fly(data, 30);
+  else if (kind === 'audio') { if (data.action === 'play' && SFX.on) { clip.src = '/api/show/audio/' + data.id; clip.play().catch(() => {}); } else clip.pause(); }   // only if this phone's sound is on
+}
+
 // ---- tabs ----
 document.querySelectorAll('.tabs button').forEach((b) => { b.onclick = () => { tab = b.dataset.t; document.querySelectorAll('.tabs button').forEach((x) => x.setAttribute('aria-selected', x === b)); paint(true); }; });
 
@@ -67,10 +75,15 @@ const hooks = {
   cert: (w, c) => shareCert(w, c), onTick: () => SFX.tick(), onTimeUp: () => SFX.playoff(),
 };
 function paint(force) {
-  if (!S || !me.checkedIn) return;
+  if (!S || !(me.checkedIn || me.viewer)) return;
   const v = $('view'); if (cur) cur._stops && cur._stops.forEach((f) => f());
   let node;
-  if (tab === 'show') node = renderStep(S, 'phone', hooks);
+  if (tab === 'show') {
+    node = renderStep(S, 'phone', hooks);
+    if (S.step.type === 'winner' && me.link && S.step.winners.some((w) => w.id === me.link.id)) {   // the host linked this phone to a nominee who just won
+      const b = el('div', 'YOU WON! Come and collect it.', 'won'); node.prepend(b); if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
+    }
+  }
   else if (tab === 'predict') node = predictTab();
   else if (tab === 'bingo') node = bingoTab();
   else node = winnersTab();
@@ -79,8 +92,9 @@ function paint(force) {
 function onState(s) {
   S = s;
   const next = s.phase + '|' + s.idx + '|' + JSON.stringify(s.step) + (s.phase === 'pre' ? '|' + s.guests : '');
-  $('react').hidden = !(me.checkedIn && s.phase === 'live');
+  $('react').hidden = !(me.checkedIn && s.phase === 'live' && s.reactionsOn !== false);
   if (!$('react').children.length) s.emojis.forEach((e) => { const b = el('button', e); b.setAttribute('aria-label', 'React ' + e); b.onclick = () => api('/api/show/react', { token, emoji: e }).catch(() => {}); $('react').append(b); });
+  if (s.linksV !== prevLinks) { prevLinks = s.linksV; refreshMe(); }   // the host linked or unlinked a guest: update my own info
   if (s.idx !== prevIdx || s.phase !== prevPhase) { sounds(s); if (s.step.type === 'winner') confetti(); refreshMe(); }   // new step: sound, confetti, and update my score
   prevIdx = s.idx; prevPhase = s.phase;
   if (next !== sig) { sig = next; if (tab === 'show') paint(); else if (tab === 'winners') paint(); }
@@ -123,6 +137,10 @@ function bingoTab() {
 function winnersTab() {
   const box = el('section', undefined, 'panel'); box.append(el('h2', 'The winners so far'));
   if (!S.revealed.length) box.append(el('p', 'Nobody yet. Stay tuned.'));
+  else { const all = el('button', 'Download all winner cards (zip)', 'btn'), msg = el('p', '', 'err'); all.style.marginTop = '.4rem';
+    all.onclick = async () => { all.disabled = true; msg.style.color = 'var(--gold)'; msg.textContent = 'Making the cards...'; try { const z = await allCardsZip(S.revealed); if (z) saveBlob(z, 'boys-choice-awards-2026-winners.zip'); msg.textContent = ''; } catch (e) { msg.style.color = ''; msg.textContent = 'Could not make the zip.'; } all.disabled = false; };
+    box.append(all, msg); }
+  if (me.checkedIn) { const a = el('button', 'My "I was there" card', 'btn ghost'); a.style.cssText = 'margin:.6rem 0'; a.onclick = async () => { const b = await makeAttend(me.name); const f = new File([b], 'i-was-there.jpg', { type: 'image/jpeg' }); if (navigator.canShare && navigator.canShare({ files: [f] })) { try { await navigator.share({ files: [f] }); return; } catch (e) { if (e.name === 'AbortError') return; } } saveBlob(b, 'i-was-there.jpg'); }; box.append(a); }
   S.revealed.forEach((r) => { const d = el('div'); d.style.cssText = 'margin:1rem 0;text-align:left'; d.append(el('div', r.cat, 'pill'));
     r.winners.forEach((w) => { const line = el('div'); line.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin:.4rem 0'; line.append(el('b', w.name));
       const b = el('button', 'Winner card', 'btn ghost'); b.style.cssText = 'padding:.4rem .9rem;font-size:.8rem'; b.onclick = () => shareCert(w, r.cat); line.append(b); d.append(line); });
@@ -133,7 +151,7 @@ function winnersTab() {
 // ---- start ----
 (async () => {
   cats = (await api('/api/ballot')).categories;
-  connect('phone', onState, null, (ok) => $('dot').classList.toggle('on', ok));
+  connect('phone', onState, onEvent, (ok) => $('dot').classList.toggle('on', ok), token);   // the token lets the host see you are online
   await refreshMe();
 })();
 </script></body></html>

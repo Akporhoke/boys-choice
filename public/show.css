@@ -34,3 +34,13 @@ input,select,textarea{width:100%;padding:.75rem 1rem;border-radius:10px;border:2
 button.cap{cursor:pointer}button.cap:hover,button.cap.on{border-color:var(--gold);background:#1f0a0c}
 .slide{width:min(520px,90vw);height:min(62vh,640px);object-fit:contain;margin:1rem auto;display:block;border-radius:8px}
 @media(prefers-reduced-motion:reduce){.env{animation:none}}
+
+/* flying reactions (every screen) */
+#float{position:fixed;inset:0;pointer-events:none;z-index:40;overflow:hidden}
+.fl{position:absolute;bottom:-3rem;animation:rise 4.2s ease-out forwards}
+@keyframes rise{0%{transform:translateY(0) scale(.6);opacity:0}10%{opacity:1}100%{transform:translateY(-105vh) scale(1.3);opacity:0}}
+.ftag{position:absolute;bottom:5.5rem;padding:.35rem .9rem;border-radius:999px;background:rgba(10,2,3,.9);border:1px solid var(--gold-d);color:var(--gold);font-size:.95rem;animation:tagup 4s ease-out forwards;white-space:nowrap}
+@keyframes tagup{0%{transform:translateY(20px);opacity:0}12%{opacity:1;transform:none}80%{opacity:1}100%{transform:translateY(-40vh);opacity:0}}
+.won{margin:.6rem 0;padding:1rem;border:3px solid var(--gold);border-radius:16px;background:linear-gradient(135deg,#3a1013,#1f0a0c);font:700 1.6rem "Cormorant Garamond",serif;color:var(--gold);text-align:center;box-shadow:0 0 40px rgba(232,207,154,.5)}
+.now{position:fixed;left:50%;bottom:3.2rem;transform:translateX(-50%);z-index:45;padding:.7rem 1.4rem;border:2px solid var(--gold);border-radius:999px;background:rgba(10,2,3,.95);color:var(--gold);font-weight:600;max-width:92vw;text-align:center}
+.now[hidden]{display:none}

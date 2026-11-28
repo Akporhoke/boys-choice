@@ -6,13 +6,14 @@ const api = (url, body, key) => fetch(url, { method: body ? 'POST' : 'GET', head
   .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || 'Something went wrong. Try again.'); return d; });
 
 // ---- live connection: Server-Sent Events, plus a slow poll as a safety net ----
-function connect(role, onState, onEvent, onStatus) {
+function connect(role, onState, onEvent, onStatus, token) {
   let last = 0;
   const take = (s) => { s._skew = s.now - Date.now(); if (s.v >= last) { last = s.v; onState(s); } };   // _skew = how far this phone's clock is off the server's
-  const es = new EventSource('/api/show/stream?role=' + role);
+  const es = new EventSource('/api/show/stream?role=' + role + (token ? '&t=' + encodeURIComponent(token) : ''));
   es.addEventListener('state', (e) => take(JSON.parse(e.data)));
   es.addEventListener('react', (e) => onEvent && onEvent('react', JSON.parse(e.data)));
   es.addEventListener('bingo', (e) => onEvent && onEvent('bingo', JSON.parse(e.data)));
+  es.addEventListener('audio', (e) => onEvent && onEvent('audio', JSON.parse(e.data)));
   es.onopen = () => { last = 0; onStatus && onStatus(true); };   // after a reconnect (or a server restart) accept any version again
   es.onerror = () => onStatus && onStatus(false);
   setInterval(() => api('/api/show/state').then(take).catch(() => {}), 15000);
@@ -65,7 +66,7 @@ function renderStep(S, role, hooks = {}) {
     if (!st.winners.length) add(el('p', 'No votes in this category.'));
     else {
       const row = el('div', undefined, 'winrow');
-      st.winners.forEach((w) => { const f = el('figure'); f.append(media(w, true), el('b', w.name)); if (w.tag) f.append(el('span', w.tag)); f.append(el('div', `${w.votes} ${w.votes === 1 ? 'vote' : 'votes'}`));
+      st.winners.forEach((w) => { const f = el('figure'); f.append(media(w, true), el('b', w.name)); if (w.tag) f.append(el('span', w.tag)); f.append(el('div', `${w.votes} ${w.votes === 1 ? 'vote' : 'votes'}`)); if (w.here) f.append(el('div', 'In the room!', 'pill'));
         if (hooks.cert) { const b = el('button', 'Make winner card', 'btn ghost'); b.style.marginTop = '.6rem'; b.onclick = () => hooks.cert(w, st.cat.name); f.append(b); } row.append(f); });
       add(row, el('p', st.winners.length > 1 ? 'It is a tie!' : st.winners[0].roast, 'roast'));
       const max = Math.max(1, ...st.rows.map((r) => r.votes));
@@ -128,10 +129,72 @@ async function makeCert(w, catName) {
   let size = 110; g.font = `700 ${size}px "Cormorant Garamond", Georgia, serif`; while (g.measureText(w.name).width > W - 200 && size > 40) { size -= 6; g.font = `700 ${size}px "Cormorant Garamond", Georgia, serif`; }
   g.fillText(w.name, W / 2, 1160); if (w.tag) { g.font = 'italic 400 34px Lora, serif'; g.globalAlpha = .8; g.fillText(w.tag, W / 2, 1215); g.globalAlpha = 1; }
   g.font = '300 24px Lora, serif'; g.globalAlpha = .6; g.fillText(location.host, W / 2, 1275); g.globalAlpha = 1;
-  return new Promise((r) => cv.toBlob(r, 'image/png'));
+  return new Promise((r) => cv.toBlob(r, 'image/jpeg', 0.9));
 }
 async function shareCert(w, catName) {
-  const blob = await makeCert(w, catName), file = new File([blob], `${w.name.replace(/\W+/g, '-')}-winner.png`, { type: 'image/png' });
+  const blob = await makeCert(w, catName), file = new File([blob], `${w.name.replace(/\W+/g, '-')}-winner.jpg`, { type: 'image/jpeg' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: `${w.name}, ${catName}` }); return; } catch (e) { if (e.name === 'AbortError') return; } }
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; a.click();   // phones without sharing just download it
+}
+
+// ---- reactions that fly across the screen. items = [{ e: emoji, n: guest name }]. ----
+// Every reaction sends 10 emojis rising from the bottom plus a small "Alice reacted" tag. A cap stops a crowd from burying the screen.
+function fly(items, cap) {
+  let layer = $('float'); if (!layer) { layer = el('div'); layer.id = 'float'; layer.setAttribute('aria-hidden', 'true'); document.body.append(layer); }
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  items.slice(0, 12).forEach(({ e, n }) => {
+    if (!still) for (let i = 0; i < 10; i++) {
+      if (layer.querySelectorAll('.fl').length >= cap) break;
+      const s = el('span', e, 'fl'); s.style.left = (4 + Math.random() * 90) + '%'; s.style.animationDelay = (i * 70) + 'ms'; s.style.fontSize = (1.6 + Math.random() * 1.4) + 'rem';
+      layer.append(s); setTimeout(() => s.remove(), 4800 + i * 70);
+    }
+    if (n && layer.querySelectorAll('.ftag').length < 4) {
+      const t = el('div', `${n} reacted ${e}`, 'ftag'); t.style.left = (4 + Math.random() * 45) + '%'; layer.append(t); setTimeout(() => t.remove(), 4200);
+    }
+  });
+}
+
+// ---- download several winner cards at once: a plain .zip made in the browser (no library) ----
+function zipStore(files) {                           // files = [{ name, data: Uint8Array }], stored without compression (the PNGs are already compressed)
+  const enc = new TextEncoder(), table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let x = n; for (let k = 0; k < 8; k++) x = x & 1 ? 0xEDB88320 ^ (x >>> 1) : x >>> 1; table[n] = x >>> 0; }
+  const crc = (d) => { let x = 0xFFFFFFFF; for (let i = 0; i < d.length; i++) x = table[(x ^ d[i]) & 255] ^ (x >>> 8); return (x ^ 0xFFFFFFFF) >>> 0; };
+  const parts = [], central = []; let offset = 0;
+  files.forEach((f) => {
+    const name = enc.encode(f.name), sum = crc(f.data), len = f.data.length, h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(12, 0x21, true);   // 0x21 = a valid date (1980-01-01)
+    h.setUint32(14, sum, true); h.setUint32(18, len, true); h.setUint32(22, len, true); h.setUint16(26, name.length, true);
+    parts.push(h.buffer, name, f.data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(14, 0x21, true);
+    ch.setUint32(16, sum, true); ch.setUint32(20, len, true); ch.setUint32(24, len, true); ch.setUint16(28, name.length, true); ch.setUint32(42, offset, true);
+    central.push(ch.buffer, name); offset += 30 + name.length + len;
+  });
+  const cdSize = central.reduce((a, b) => a + (b.byteLength !== undefined ? b.byteLength : b.length), 0), end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end.buffer], { type: 'application/zip' });
+}
+async function allCardsZip(revealed) {               // revealed = S.revealed: [{ cat, winners: [...] }]
+  const files = [];
+  for (const r of revealed) for (const w of r.winners) {
+    const blob = await makeCert(w, r.cat);
+    files.push({ name: `${r.cat} - ${w.name}.jpg`.replace(/[\\/:*?"<>|]/g, ''), data: new Uint8Array(await blob.arrayBuffer()) });
+  }
+  return files.length ? zipStore(files) : null;
+}
+function saveBlob(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); }
+
+// ---- "I was there" card for every guest ----
+async function makeAttend(name) {
+  try { await document.fonts.load('700 80px "Cormorant Garamond"'); } catch {}
+  const W = 1080, H = 1350, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
+  const bg = g.createRadialGradient(W / 2, H * .42, 60, W / 2, H * .42, H * .85); bg.addColorStop(0, '#3a1013'); bg.addColorStop(1, '#040302'); g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  g.strokeStyle = '#b98d45'; g.lineWidth = 3; g.strokeRect(40, 40, W - 80, H - 80); g.strokeRect(58, 58, W - 116, H - 116);
+  g.save(); g.translate(W / 2 - 100, 260); g.scale(1.67, 1.67); g.strokeStyle = '#e8cf9a'; g.lineWidth = 2; g.lineJoin = 'round';
+  g.stroke(new Path2D('M14 70 L8 24 L38 47 L60 12 L82 47 L112 24 L106 70 Z M14 78 H106 M20 86 H100')); [[8, 19], [60, 7], [112, 19]].forEach(([x, y]) => { g.beginPath(); g.arc(x, y, 4, 0, 7); g.stroke(); }); g.restore();
+  g.textAlign = 'center'; g.fillStyle = '#e8cf9a'; g.font = '300 34px Lora, serif'; g.fillText('I WAS THERE', W / 2, 620);
+  g.font = 'italic 400 64px "Cormorant Garamond", Georgia, serif'; g.fillText("The Boys' Choice Awards 2026", W / 2, 720);
+  let size = 120; g.font = `700 ${size}px "Cormorant Garamond", Georgia, serif`; while (g.measureText(name).width > W - 200 && size > 40) { size -= 6; g.font = `700 ${size}px "Cormorant Garamond", Georgia, serif`; }
+  g.fillText(name, W / 2, 900); g.font = '300 30px Lora, serif'; g.globalAlpha = .8; g.fillText('November 30, 2026', W / 2, 980); g.globalAlpha = .6; g.font = '300 24px Lora, serif'; g.fillText(location.host, W / 2, 1275);
+  return new Promise((r) => cv.toBlob(r, 'image/jpeg', 0.9));
 }

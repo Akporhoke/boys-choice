@@ -6,6 +6,9 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const express = require('express');
+
+const AUDIO_TYPES = { mp3: 'audio/mpeg', m4a: 'audio/mp4', mp4: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg; codecs=opus', wav: 'audio/wav', webm: 'audio/webm' };   // what the audio room accepts, by file ending
 
 const SPEECH_MS = 15000;                               // time each winner gets for a speech
 const EMOJIS = ['🔥', '😂', '💀', '👏', '😭', '🤯'];  // the reaction buttons
@@ -26,9 +29,9 @@ const ROASTS = [                                       // used when the host has
 ];
 
 module.exports = function mountShow(app, ctx) {
-  const { adminOk, load, categories, tally, saveSettings, limit, showDoc, publicDir } = ctx;
+  const { adminOk, load, categories, tally, saveSettings, limit, showDoc, publicDir, audio, votingState, storageMode } = ctx;
   const fresh = () => ({ phase: 'pre', step: 0, startedAt: 0, guests: {}, predictions: {}, reactions: {}, bingo: {}, quiz: {},
-    roasts: {}, ads: DEFAULT_ADS.slice(), captionPhoto: '', captions: [], capVotes: {} });
+    roasts: {}, ads: DEFAULT_ADS.slice(), captionPhoto: '', captions: [], capVotes: {}, links: {}, reactionsOn: true });
   let S = { ...fresh(), ...(showDoc.get() || {}) };        // the show lives in MongoDB (see store.js)
   const save = () => showDoc.set(S);
   let dirty = false, version = 1;
@@ -58,6 +61,11 @@ module.exports = function mountShow(app, ctx) {
     const t = tally(load()).find((x) => x.id === id), rows = t ? t.nominees : [], top = rows[0] ? rows[0].votes : 0;
     return { rows, winners: top > 0 ? rows.filter((n) => n.votes === top) : [] };
   };
+  const NOM = new Map();                               // nominee id -> { id, name, cats: [category names] }
+  categories.forEach((c) => c.nominees.forEach((n) => { if (!NOM.has(n.id)) NOM.set(n.id, { id: n.id, name: n.name, cats: [] }); NOM.get(n.id).cats.push(c.name); }));
+  let linksV = 0;                                      // goes up whenever the host links or unlinks a guest, so phones know to refresh their own info
+  const online = new Map();                            // guest token -> number of open screens (so the host can see who is online)
+  const hereNow = (nomineeId) => Object.entries(S.links).some(([t, id]) => id === nomineeId && online.has(t));   // is the person linked to this nominee in the room?
   const roastFor = (n) => S.roasts[n.id] || ROASTS[hash(n.id) % ROASTS.length];
   const images = () => {                               // moments photos (not the little previews that sit next to videos)
     let all = []; try { all = fs.readdirSync(path.join(publicDir, 'videos')); } catch {}
@@ -82,7 +90,7 @@ module.exports = function mountShow(app, ctx) {
       case 'intro': return { type: 'intro', cat: { id: cat.id, name: cat.name, info: cat.info || '', nominees: cat.nominees.map(slim) } };
       case 'envelope': return { type: 'envelope', cat: { id: cat.id, name: cat.name } };
       case 'winner': { const r = resultOf(st.cat); return { type: 'winner', cat: { id: cat.id, name: cat.name },
-        winners: r.winners.map((n) => ({ ...slim(n), votes: n.votes, roast: roastFor(n) })), rows: r.rows.map((n) => ({ name: n.name, votes: n.votes })) }; }
+        winners: r.winners.map((n) => ({ ...slim(n), votes: n.votes, roast: roastFor(n), here: hereNow(n.id) })), rows: r.rows.map((n) => ({ name: n.name, votes: n.votes })) }; }
       case 'speech': { const r = resultOf(st.cat); return { type: 'speech', cat: { id: cat.id, name: cat.name }, winners: r.winners.map(slim), endsAt: S.startedAt + SPEECH_MS, seconds: SPEECH_MS / 1000 }; }
       case 'ad': return { type: 'ad', text: S.ads[st.n % Math.max(1, S.ads.length)] || '' };
       case 'quiz': return { type: 'quiz', leaders: board(Object.entries(S.quiz).map(([t, q]) => ({ name: nameOf(t), n: q.score, total: q.total }))) };
@@ -97,7 +105,7 @@ module.exports = function mountShow(app, ctx) {
   };
   const publicState = () => ({
     v: version, now: Date.now(), phase: S.phase, idx: S.step, total: STEPS.length, step: view(STEPS[S.step] || STEPS[0]),
-    guests: Object.keys(S.guests).length, names: Object.values(S.guests).slice(-150).map((g) => g.name), emojis: EMOJIS,
+    linksV, reactionsOn: S.reactionsOn !== false, guests: Object.keys(S.guests).length, names: Object.values(S.guests).slice(-150).map((g) => g.name), emojis: EMOJIS,
     revealed: revealedIds(S.step).map((id) => { const c = categories.find((x) => x.id === id); return { cat: c.name, winners: resultOf(id).winners.map(slim) }; }),
   });
 
@@ -107,16 +115,18 @@ module.exports = function mountShow(app, ctx) {
   const broadcast = () => { version++; const st = publicState(); clients.forEach((cl) => send(cl, 'state', st)); };
   let soonTimer = null;                                 // groups many quick changes (like 100 check-ins) into one broadcast
   const broadcastSoon = () => { if (!soonTimer) soonTimer = setTimeout(() => { soonTimer = null; broadcast(); }, 400); };
-  let rbuf = {};                                        // reactions waiting to be sent to the big screen
-  setInterval(() => { if (Object.keys(rbuf).length) { const c = rbuf; rbuf = {}; clients.forEach((cl) => cl.role === 'stage' && send(cl, 'react', c)); } }, 250).unref();
+  let rbuf = [];                                        // reactions waiting to be sent: [{ e: emoji, n: guest name }]
+  setInterval(() => { if (rbuf.length) { const items = rbuf.slice(0, 20); rbuf = []; clients.forEach((cl) => send(cl, 'react', items)); } }, 250).unref();   // sent to EVERY screen, 4 times a second at most
+  const sendAll = (event, data) => clients.forEach((cl) => send(cl, event, data));
   setInterval(() => clients.forEach((cl) => cl.res.write(': ping\n\n')), 20000).unref();   // keeps proxies from closing the connection
 
   app.get('/api/show/stream', (req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
     res.write('retry: 2000\n\n');
-    const cl = { res, role: req.query.role === 'stage' ? 'stage' : 'phone' };
-    clients.add(cl); send(cl, 'state', publicState());
-    req.on('close', () => clients.delete(cl));
+    const t = String(req.query.t || ''), cl = { res, role: req.query.role === 'stage' ? 'stage' : 'phone', t: /^[\w-]{16,64}$/.test(t) ? t : '' };
+    clients.add(cl); if (cl.t) online.set(cl.t, (online.get(cl.t) || 0) + 1);   // presence: this guest has a screen open
+    send(cl, 'state', publicState());
+    req.on('close', () => { clients.delete(cl); if (cl.t) { const k = (online.get(cl.t) || 1) - 1; if (k > 0) online.set(cl.t, k); else online.delete(cl.t); } });
   });
   app.get('/api/show/state', (req, res) => { res.set('Cache-Control', 'no-store'); res.json(publicState()); });
 
@@ -157,7 +167,8 @@ module.exports = function mountShow(app, ctx) {
     const t = String(req.query.token || ''), g = S.guests[t];
     if (!g) return res.json({ checkedIn: false });
     const p = S.predictions[t];
-    res.json({ checkedIn: true, name: g.name, picks: p ? p.picks : null, ...scoreOf(t, S.step), bingo: !!S.bingo[t] });
+    const nm = NOM.get(S.links[t]);
+    res.json({ checkedIn: true, name: g.name, picks: p ? p.picks : null, ...scoreOf(t, S.step), bingo: !!S.bingo[t], link: nm ? { id: nm.id, name: nm.name, cats: nm.cats } : null });
   });
   app.post('/api/show/predict', tokLimit, (req, res) => {  // predictions close the moment the show goes live
     const t = need(req, res); if (!t) return;
@@ -171,14 +182,15 @@ module.exports = function mountShow(app, ctx) {
   app.post('/api/show/react', (req, res) => {          // no rate limiter here: a 250ms cooldown per device instead
     const t = need(req, res); if (!t) return;
     const e = req.body.emoji; if (!EMOJIS.includes(e)) return res.status(400).json({ error: 'Unknown reaction.' });
+    if (S.reactionsOn === false) return res.json({ ok: true, paused: true });   // the host can pause reactions during a speech
     const now = Date.now(); if (now - (lastReact.get(t) || 0) < 250) return res.json({ ok: true, skipped: true });
-    lastReact.set(t, now); S.reactions[t] = (S.reactions[t] || 0) + 1; dirty = true; rbuf[e] = (rbuf[e] || 0) + 1;
+    lastReact.set(t, now); S.reactions[t] = (S.reactions[t] || 0) + 1; dirty = true; rbuf.push({ e, n: nameOf(t) });
     res.json({ ok: true });
   });
   app.post('/api/show/bingo', tokLimit, (req, res) => {   // a guest shouts BINGO: the big screen shows their name once
     const t = need(req, res); if (!t) return;
     if (S.bingo[t]) return res.json({ ok: true, again: true });
-    S.bingo[t] = Date.now(); save(); clients.forEach((cl) => cl.role === 'stage' && send(cl, 'bingo', { name: nameOf(t) })); res.json({ ok: true });
+    S.bingo[t] = Date.now(); save(); sendAll('bingo', { name: nameOf(t) }); res.json({ ok: true });
   });
   app.post('/api/show/caption', tokLimit, (req, res) => {
     const t = need(req, res); if (!t) return;
@@ -197,6 +209,28 @@ module.exports = function mountShow(app, ctx) {
     S.capVotes[t] = cap.id; cap.votes++; save(); res.json({ ok: true });
   });
 
+  // ---- the audio room: recorded speeches. Only the host can upload; anyone can stream a clip they have the (unguessable) id of. ----
+  app.post('/api/show/audio', adminGate, express.raw({ type: () => true, limit: '3mb' }), async (req, res) => {
+    const c = categories.find((x) => x.id === req.query.cat), nominee = String(req.query.nominee || ''), type = AUDIO_TYPES[String(req.query.ext || '').toLowerCase()];
+    if (!c || !c.nominees.some((n) => n.id === nominee)) return res.status(400).json({ error: 'Unknown award or nominee.' });
+    if (!type) return res.status(400).json({ error: 'Use an mp3, m4a, aac, ogg, opus, wav or webm file.' });
+    if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'The file is empty.' });
+    if (audio.list().length >= 150) return res.status(400).json({ error: 'Too many clips. Delete some first.' });
+    try { const id = await audio.add(req.body, { cat: c.id, nominee, label: String(req.query.label || NOM.get(nominee).name).slice(0, 60), type }); res.json({ ok: true, id }); }
+    catch (e) { console.error('Audio upload failed:', e.message); res.status(500).json({ error: 'Could not save the clip.' }); }
+  });
+  app.get('/api/show/audio/:id', async (req, res) => {   // streams a clip, with Range support (Safari and iPhones need it)
+    const a = await audio.get(String(req.params.id).slice(0, 40)).catch(() => null);
+    if (!a) return res.status(404).end();
+    const buf = a.buf, total = buf.length;
+    res.set({ 'Content-Type': a.meta.type, 'Accept-Ranges': 'bytes', 'Cache-Control': 'public, max-age=3600' });
+    const m = /^bytes=(\d*)-(\d*)$/.exec(req.get('range') || '');
+    if (!m) return res.set('Content-Length', total).end(buf);
+    const start = m[1] === '' ? Math.max(0, total - Number(m[2])) : Number(m[1]), end = m[1] !== '' && m[2] !== '' ? Math.min(Number(m[2]), total - 1) : total - 1;
+    if (!(start <= end && start < total)) return res.status(416).set('Content-Range', `bytes */${total}`).end();
+    res.status(206).set({ 'Content-Range': `bytes ${start}-${end}/${total}`, 'Content-Length': end - start + 1 }).end(buf.subarray(start, end + 1));
+  });
+
   // ---- host controls (need the admin key) ----
   const go = (i) => {
     i = Math.max(0, Math.min(STEPS.length - 1, Math.floor(Number(i)) || 0));
@@ -210,9 +244,28 @@ module.exports = function mountShow(app, ctx) {
     const seen = new Map(); categories.forEach((c) => c.nominees.forEach((n) => seen.set(n.id, n.name)));
     res.json({ phase: S.phase, idx: S.step, steps: STEPS.map((s) => s.label), guests: Object.keys(S.guests).length, predictions: Object.keys(S.predictions).length,
       reactions: Object.values(S.reactions).reduce((a, b) => a + b, 0), screens: clients.size, roasts: S.roasts, ads: S.ads,
-      captionPhoto: S.captionPhoto, images: images(), people: [...seen].map(([id, name]) => ({ id, name })), defaultRoasts: ROASTS });
+      captionPhoto: S.captionPhoto, images: images(), people: [...seen].map(([id, name]) => ({ id, name })), defaultRoasts: ROASTS,
+      reactionsOn: S.reactionsOn !== false,
+      // live guests: who is checked in, who is online right now, and which nominee each one has been linked to
+      liveGuests: Object.entries(S.guests).map(([t, g]) => ({ token: t, name: g.name, online: online.has(t), link: S.links[t] || '' })).sort((a, b) => (b.online - a.online) || a.name.localeCompare(b.name)),
+      nominees: [...NOM.values()],
+      // the audio room: every award with its nominees, and the clips uploaded for each
+      room: categories.map((c) => ({ id: c.id, name: c.name, nominees: c.nominees.map((n) => ({ id: n.id, name: n.name })) })), audio: audio.list(),
+      suggest: (S.phase !== 'pre' && ['winner', 'speech'].includes((STEPS[S.step] || {}).type)) ? resultOf(STEPS[S.step].cat).winners.map((n) => ({ cat: STEPS[S.step].cat, nominee: n.id })) : [],
+      checklist: (() => {
+        const slots = categories.reduce((n, c) => n + c.nominees.length, 0), have = categories.reduce((n, c) => n + c.nominees.filter((x) => audio.list().some((a) => a.cat === c.id && a.nominee === x.id)).length, 0);
+        const stages = [...clients].filter((c) => c.role === 'stage').length;
+        return [
+          { ok: storageMode === 'mongodb', label: storageMode === 'mongodb' ? 'Everything is saved in MongoDB' : 'NOT saving to MongoDB: data is lost on updates' },
+          { ok: votingState() === 'closed', label: votingState() === 'closed' ? 'Voting is closed' : 'Voting is still open (it closes when you start the show)' },
+          { ok: stages > 0, label: stages > 0 ? `Big screen connected (${stages})` : 'No big screen connected yet: open /stage.html' },
+          { ok: Object.keys(S.guests).length > 0, label: `${Object.keys(S.guests).length} guests checked in` },
+          { ok: have > 0, label: `Audio clips ready for ${have} of ${slots} nominee slots` },
+          { ok: Object.keys(S.roasts).length > 0, label: `${Object.keys(S.roasts).length} custom roast lines written` },
+        ];
+      })() });
   });
-  app.post('/api/show/admin', adminGate, (req, res) => {
+  app.post('/api/show/admin', adminGate, async (req, res) => {
     if (!adminOk(req)) return res.status(401).json({ error: 'Wrong admin key.' });
     const b = req.body || {};
     if (b.action === 'start') { S.phase = 'live'; go(0); saveSettings({ closed: true }); }   // going live also closes voting
@@ -221,6 +274,24 @@ module.exports = function mountShow(app, ctx) {
     else if (b.action === 'goto') go(b.index);
     else if (b.action === 'pre') { S.phase = 'pre'; S.step = 0; }
     else if (b.action === 'reset') S = fresh();
+    else if (b.action === 'link') {                      // tie a checked-in guest to the nominee they are (or clear it with '')
+      if (!S.guests[b.token]) return res.status(400).json({ error: 'That guest is not checked in.' });
+      if (b.nominee && !NOM.has(b.nominee)) return res.status(400).json({ error: 'Unknown nominee.' });
+      if (b.nominee) S.links[b.token] = b.nominee; else delete S.links[b.token];
+      linksV++;
+    } else if (b.action === 'autolink') {                // link every guest whose name matches exactly one nominee's full name or first name
+      const all = [...NOM.values()], norm = (x) => String(x).trim().toLowerCase(); let n = 0;
+      Object.entries(S.guests).forEach(([t, g]) => { if (S.links[t]) return;
+        const hits = all.filter((p) => norm(p.name) === norm(g.name) || norm(p.name).split(' ')[0] === norm(g.name)); if (hits.length === 1) { S.links[t] = hits[0].id; n++; } });
+      linksV++; save(); broadcast(); return res.json({ ok: true, linked: n });
+    } else if (b.action === 'reactions') S.reactionsOn = !!b.on;
+    else if (b.action === 'play') {                      // play a clip on the big screen (and on phones that turned sound on)
+      const m = audio.list().find((a) => a.id === b.id); if (!m) return res.status(404).json({ error: 'That clip is gone.' });
+      const c = categories.find((x) => x.id === m.cat);
+      sendAll('audio', { action: 'play', id: m.id, label: m.label, nominee: NOM.has(m.nominee) ? NOM.get(m.nominee).name : '', cat: c ? c.name : '' });
+      return res.json({ ok: true });
+    } else if (b.action === 'stop') { sendAll('audio', { action: 'stop' }); return res.json({ ok: true }); }
+    else if (b.action === 'audioDelete') { try { await audio.remove(String(b.id)); } catch (e) { return res.status(500).json({ error: 'Could not delete the clip.' }); } }
     else if (b.action === 'config') {
       if (b.roasts && typeof b.roasts === 'object') S.roasts = Object.fromEntries(Object.entries(b.roasts).map(([k, v]) => [String(k), String(v).trim().slice(0, 140)]).filter(([, v]) => v));
       if (Array.isArray(b.ads)) S.ads = b.ads.map((a) => String(a).trim().slice(0, 200)).filter(Boolean).slice(0, 8);

@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Host panel</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="show.css">
+<style>
+main{max-width:640px;margin:0 auto;padding:1rem}
+.panel{margin:1rem 0}.panel h3{margin-bottom:.6rem}
+.big{width:100%;font-size:1.6rem;padding:1.2rem}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin:.6rem 0}
+.stat{display:flex;gap:.5rem;flex-wrap:wrap}.stat span{padding:.3rem .8rem;border:1px solid var(--gold-d);border-radius:999px;font-size:.85rem}
+.now{font:700 1.5rem "Cormorant Garamond",serif;color:var(--gold)}
+label{display:block;font-weight:600;margin:.7rem 0 .2rem}
+textarea{min-height:6rem}
+.danger{border-color:#ff8a7a;color:#ffb4a8}
+.ck li{padding:.2rem 0}.ok::before{content:'✓ ';color:#5be37d}.no::before{content:'✗ ';color:#ffb4a8}
+.g{display:flex;align-items:center;gap:.5rem;margin:.4rem 0}.g .d{width:.7rem;height:.7rem;border-radius:50%;background:#777;flex:0 0 auto}.g .d.on{background:#5be37d}.g b{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.g select{flex:1.2;padding:.4rem}
+details{border:1px solid var(--gold-d);border-radius:10px;padding:.4rem .8rem;margin:.5rem 0}summary{cursor:pointer;font-weight:600;padding:.3rem 0}
+.nom{padding:.5rem 0;border-top:1px solid rgba(232,207,154,.2)}.clip{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin:.3rem 0;font-size:.9rem}.clip span{flex:1;min-width:6rem}
+.mini{padding:.3rem .7rem;font-size:.8rem}.badge{font-size:.8rem;opacity:.85}
+</style></head>
+<body><main>
+  <section class="panel"><h1>Host panel</h1>
+    <label for="k">Admin key</label><input id="k" type="password" autocomplete="off">
+    <p><button class="btn" id="open" type="button" style="margin-top:.8rem">Open the controls</button></p><p class="err" id="err" role="alert"></p>
+  </section>
+  <div id="ctl" hidden>
+    <section class="panel">
+      <div class="stat" id="stat"></div>
+      <p style="margin:.8rem 0 .2rem">On screen now:</p><div class="now" id="now"></div>
+      <p style="margin:.2rem 0 .8rem;opacity:.8" id="up"></p>
+      <button class="btn big" id="next" type="button">NEXT</button>
+      <div class="two"><button class="btn ghost" id="back" type="button">Back</button><button class="btn ghost" id="start" type="button">Start the show</button></div>
+      <label for="jump">Jump to a step</label><select id="jump"></select>
+      <div class="two"><button class="btn ghost" id="go" type="button">Go to it</button><button class="btn ghost" id="pre" type="button">Back to red carpet</button></div>
+      <p style="font-size:.85rem;opacity:.8">Tip: on a computer, the right arrow or space bar also means NEXT.</p>
+      <p><a href="/stage.html" target="_blank" style="color:var(--gold)">Open the big screen</a> | <a href="/show.html" target="_blank" style="color:var(--gold)">Open the phone view</a></p>
+    </section>
+    <section class="panel"><h3>Before you start</h3><ul id="check" style="list-style:none;padding:0;margin:0"></ul></section>
+    <section class="panel"><h3>Audio for the winner</h3><div id="sug"></div>
+      <div class="two"><button class="btn ghost" id="stopAudio" type="button">Stop audio on stage</button><button class="btn ghost" id="reactBtn" type="button">Pause reactions</button></div></section>
+    <section class="panel"><h3>Live guests</h3><p style="font-size:.9rem">Green dot = online now. Link a guest to the nominee they are, so they get a YOU WON screen and "In the room" shows on the big screen.</p>
+      <button class="btn ghost" id="autolink" type="button" style="margin-bottom:.6rem">Auto-link matching names</button><span id="linkmsg"></span><div id="guests"></div></section>
+    <section class="panel"><h3>Voice room</h3><p style="font-size:.9rem">Upload each nominee's recorded speech under their award (mp3, m4a, ogg, opus, wav; up to 3 MB each). When they win, press Play on stage.</p><p id="upmsg" class="err" role="status"></p><div id="room"></div></section>
+    <section class="panel"><h3>Roast lines</h3><p style="font-size:.9rem">One line under each winner. Leave empty to use a random gentle one.</p><div id="roasts"></div>
+      <h3 style="margin-top:1.2rem">Sponsor breaks</h3><p style="font-size:.9rem">One fake ad per line.</p><textarea id="ads"></textarea>
+      <label for="cp">Caption battle photo</label><select id="cp"></select>
+      <p><button class="btn" id="save" type="button" style="margin-top:.8rem">Save settings</button> <span id="saved"></span></p>
+    </section>
+    <section class="panel"><h3>Danger zone</h3><p style="font-size:.9rem">Clears check-ins, predictions, reactions and bingo. It does not touch votes.</p>
+      <button class="btn ghost danger" id="reset" type="button">Reset the show data</button></section>
+  </div>
+</main>
+<script src="showcore.js"></script>
+<script>
+let key = '', info = null, busy = false, timer = null;
+const call = (body) => api('/api/show/admin', body, key);
+const say = (m, ok) => { const e = $('err'); e.textContent = m || ''; e.style.color = ok ? 'var(--gold)' : ''; };
+
+function paint(i) {
+  info = i;
+  $('stat').replaceChildren(...[`Phase: ${i.phase}`, `${i.guests} checked in`, `${i.predictions} predictions`, `${i.reactions} reactions`, `${i.screens} screens connected`].map((t) => el('span', t)));
+  $('now').textContent = i.phase === 'pre' ? 'Red carpet (show not started)' : i.steps[i.idx];
+  $('up').textContent = i.phase === 'pre' ? 'Press "Start the show" when everyone is ready. Voting closes automatically.' : (i.steps[i.idx + 1] ? 'Next: ' + i.steps[i.idx + 1] : 'That was the last step.');
+  $('next').textContent = i.phase === 'pre' ? 'Press Start the show' : (i.steps[i.idx + 1] ? 'NEXT: ' + i.steps[i.idx + 1] : 'The end'); $('next').disabled = i.phase === 'pre' || !i.steps[i.idx + 1];
+  if (!$('jump').options.length) i.steps.forEach((s, n) => $('jump').append(new Option(`${n + 1}. ${s}`, n)));
+  $('jump').value = i.idx;
+  $('reactBtn').textContent = i.reactionsOn ? 'Pause reactions' : 'Resume reactions';
+  $('check').className = 'ck'; $('check').replaceChildren(...i.checklist.map((c) => el('li', c.label, c.ok ? 'ok' : 'no')));
+  suggestions(i); guests(i); room(i);
+}
+
+// ---- the winner's clips, front and centre while a winner or speech step is on ----
+function suggestions(i) {
+  const box = $('sug'); box.replaceChildren();
+  if (!i.suggest.length) { box.append(el('p', 'When a winner is on screen, their clips appear here with a Play button.')); return; }
+  i.suggest.forEach((sg) => {
+    const person = i.nominees.find((n) => n.id === sg.nominee), clips = i.audio.filter((a) => a.cat === sg.cat && a.nominee === sg.nominee);
+    if (!clips.length) box.append(el('p', `No clip uploaded for ${person ? person.name : sg.nominee}.`));
+    clips.forEach((c) => { const b = el('button', `Play on stage: ${person ? person.name : ''} (${c.label})`, 'btn big'); b.style.cssText = 'font-size:1.1rem;padding:.9rem;margin:.3rem 0'; b.onclick = () => act({ action: 'play', id: c.id }); box.append(b); });
+  });
+}
+
+// ---- live guests: online dot + which nominee each guest is ----
+let sigG = '';
+function guests(i) {
+  const sig = JSON.stringify([i.liveGuests, i.nominees.length]);
+  if (sig === sigG || document.activeElement.tagName === 'SELECT' && $('guests').contains(document.activeElement)) return;   // do not redraw while someone is choosing
+  sigG = sig; const box = $('guests'); box.replaceChildren();
+  if (!i.liveGuests.length) box.append(el('p', 'Nobody has checked in yet.'));
+  i.liveGuests.forEach((g) => {
+    const row = el('div', undefined, 'g'), dot = el('span', undefined, 'd' + (g.online ? ' on' : '')), sel = el('select');
+    sel.setAttribute('aria-label', `Nominee for ${g.name}`); sel.append(new Option('Not a nominee', ''));
+    i.nominees.forEach((n) => sel.append(new Option(`${n.name} (${n.cats.join(', ')})`, n.id))); sel.value = g.link;
+    sel.onchange = () => act({ action: 'link', token: g.token, nominee: sel.value }); row.append(dot, el('b', g.name), sel); box.append(row);
+  });
+}
+
+// ---- the voice room: awards, their nominees, and the clips for each ----
+let sigR = '', preview = null;
+function room(i) {
+  const sig = JSON.stringify([i.audio, i.room.length]); if (sig === sigR) return; sigR = sig;
+  const box = $('room'), openIds = [...box.querySelectorAll('details[open]')].map((d) => d.dataset.id); box.replaceChildren();   // keep the opened awards open
+  i.room.forEach((c) => {
+    const have = c.nominees.filter((n) => i.audio.some((a) => a.cat === c.id && a.nominee === n.id)).length;
+    const d = el('details'); d.dataset.id = c.id; if (openIds.includes(c.id)) d.open = true;
+    d.append(el('summary', `${c.name}  (${have}/${c.nominees.length} ready)`));
+    c.nominees.forEach((n) => {
+      const nom = el('div', undefined, 'nom'), clips = i.audio.filter((a) => a.cat === c.id && a.nominee === n.id);
+      nom.append(el('b', n.name), el('span', clips.length ? `  ${clips.length} clip${clips.length > 1 ? 's' : ''}` : '  no clip yet', 'badge'));
+      clips.forEach((a) => { const r = el('div', undefined, 'clip'), pv = el('button', 'Listen', 'btn ghost mini'), pl = el('button', 'Play on stage', 'btn mini'), del = el('button', 'Delete', 'btn ghost mini danger');
+        pv.onclick = () => { if (preview) preview.pause(); preview = new Audio('/api/show/audio/' + a.id); preview.play().catch(() => {}); };
+        pl.onclick = () => act({ action: 'play', id: a.id }); del.onclick = () => { if (confirm(`Delete "${a.label}"?`)) act({ action: 'audioDelete', id: a.id }); };
+        r.append(el('span', a.label), pv, pl, del); nom.append(r); });
+      const up = el('input'); up.type = 'file'; up.accept = 'audio/*,.opus,.m4a,.mp3,.ogg,.wav,.aac,.webm'; up.multiple = true; up.style.cssText = 'margin-top:.4rem;font-size:.85rem'; up.setAttribute('aria-label', `Upload a clip for ${n.name}`);
+      up.onchange = () => upload(c.id, n.id, [...up.files]); nom.append(up); d.append(nom);
+    });
+    box.append(d);
+  });
+}
+async function upload(cat, nominee, files) {
+  const m = $('upmsg');
+  for (const f of files) {
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    if (f.size > 3 * 1024 * 1024) { m.style.color = ''; m.textContent = `${f.name} is over 3 MB. Use a shorter clip.`; continue; }
+    m.style.color = 'var(--gold)'; m.textContent = `Uploading ${f.name}...`;
+    try {
+      const r = await fetch(`/api/show/audio?cat=${encodeURIComponent(cat)}&nominee=${encodeURIComponent(nominee)}&ext=${encodeURIComponent(ext)}&label=${encodeURIComponent(f.name.replace(/\.[^.]+$/, '').slice(0, 60))}`,
+        { method: 'POST', headers: { 'x-admin-key': key, 'Content-Type': 'application/octet-stream' }, body: f });
+      const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || 'Upload failed.');
+      m.textContent = `Uploaded ${f.name}.`;
+    } catch (e) { m.style.color = ''; m.textContent = e.message; }
+  }
+  await refresh();
+}
+async function refresh() { try { paint(await api('/api/show/admin', null, key)); } catch (e) { say(e.message); } }
+async function act(body) {                           // one action at a time, so a double tap cannot skip a step
+  if (['next', 'back', 'goto', 'start'].includes(body.action)) { if (busy) return; busy = true; setTimeout(() => { busy = false; }, 350); }   // the double-tap guard is only for moving through the show
+  try { await call(body); say(''); await refresh(); } catch (e) { say(e.message); }
+}
+
+function fillSettings(i) {
+  const r = $('roasts'); r.replaceChildren();
+  i.people.forEach((p, n) => { const l = el('label', p.name), inp = el('input'); inp.id = 'r_' + p.id; inp.dataset.id = p.id; inp.maxLength = 140; inp.value = i.roasts[p.id] || ''; inp.placeholder = i.defaultRoasts[n % i.defaultRoasts.length]; l.htmlFor = inp.id; r.append(l, inp); });
+  $('ads').value = i.ads.join('\n');
+  const cp = $('cp'); cp.replaceChildren(new Option('First moments photo (automatic)', '')); i.images.forEach((u, n) => cp.append(new Option(`Photo ${n + 1}`, u))); cp.value = i.captionPhoto || '';
+}
+
+$('open').onclick = async () => {
+  key = $('k').value; say('');
+  try { const i = await api('/api/show/admin', null, key); $('ctl').hidden = false; paint(i); fillSettings(i); clearInterval(timer); timer = setInterval(refresh, 4000); } catch (e) { say(e.message); }
+};
+$('stopAudio').onclick = () => act({ action: 'stop' });
+$('reactBtn').onclick = () => act({ action: 'reactions', on: !(info && info.reactionsOn) });
+$('autolink').onclick = async () => { try { const r = await call({ action: 'autolink' }); $('linkmsg').textContent = ` Linked ${r.linked}.`; await refresh(); } catch (e) { say(e.message); } };
+$('next').onclick = () => act({ action: 'next' });
+$('back').onclick = () => act({ action: 'back' });
+$('start').onclick = () => { if (!info || info.phase === 'pre' || confirm('Start again from the beginning?')) act({ action: 'start' }); };
+$('go').onclick = () => act({ action: 'goto', index: Number($('jump').value) });
+$('pre').onclick = () => { if (confirm('Go back to the red carpet? Screens will show the guest wall again.')) act({ action: 'pre' }); };
+$('reset').onclick = () => { if (confirm('Reset all show data (check-ins, predictions, reactions, bingo)? Votes are not touched.')) act({ action: 'reset' }); };
+$('save').onclick = async () => {
+  const roasts = {}; document.querySelectorAll('#roasts input').forEach((i) => { if (i.value.trim()) roasts[i.dataset.id] = i.value; });
+  try { await call({ action: 'config', roasts, ads: $('ads').value.split('\n'), captionPhoto: $('cp').value }); $('saved').textContent = 'Saved.'; setTimeout(() => { $('saved').textContent = ''; }, 2500); } catch (e) { say(e.message); }
+};
+document.addEventListener('keydown', (e) => { if ($('ctl').hidden || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return; if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); $('next').click(); } else if (e.key === 'ArrowLeft') $('back').click(); });
+</script></body></html>
